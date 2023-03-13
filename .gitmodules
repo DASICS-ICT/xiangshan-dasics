@@ -1,6 +1,6 @@
 [submodule "rocket-chip"]
 	path = rocket-chip
-	url = https://github.com/OpenXiangShan/rocket-chip.git
+	url = git@172.16.32.118:/home/git/rocket-chip.git
 [submodule "difftest"]
 	path = difftest
 	url = git@172.16.32.118:/home/git/difftest.git
