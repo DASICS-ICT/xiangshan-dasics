@@ -379,6 +379,15 @@ object BDecode extends DecodeConstants{
 }
 
 /**
+  * N extension (user-level interrupts) Decode constants
+  */
+object NDecode extends DecodeConstants {
+  val table: Array[(BitPat, List[BitPat])] = Array(
+    URET -> List(SrcType.reg, SrcType.imm, SrcType.X, FuType.csr, CSROpType.jmp, Y, N, N, Y, Y, N, SelImm.IMM_I)
+  )
+}
+
+/**
  * FP Divide SquareRoot Constants
  */
 object FDivSqrtDecode extends DecodeConstants {
