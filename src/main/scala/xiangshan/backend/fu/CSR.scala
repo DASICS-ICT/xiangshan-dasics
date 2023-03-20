@@ -465,14 +465,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.tlb := tlbBundle
 
   // User-Level CSRs
-  val ustatusWmask: UInt = "h11".U // UPIE and UIE
+  val ustatusWmask: UInt = "h11".U(XLEN.W) // UPIE and UIE
   val ustatusRmask: UInt = ustatusWmask
   val uieMask: UInt = "h111".U & sideleg
   val uipMask: UInt = "h111".U & sideleg
   val uipWMask: UInt = "h1".U(XLEN.W) // usip is writable in u-mode
+  val uepcMask = (~0x1.U(XLEN.W)).asUInt
   val uepc = Reg(UInt(XLEN.W))
   val ucause = RegInit(UInt(XLEN.W), 0.U)
   val uscratch = RegInit(UInt(XLEN.W), 0.U)
+  val utvecMask = (~0x2.U(XLEN.W)).asUInt
   val utvec = RegInit(UInt(XLEN.W), 0.U)
   val utval = RegInit(UInt(XLEN.W), 0.U)
 
@@ -679,11 +681,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     //--- User Trap Setup ---
     MaskedRegMap(Ustatus, mstatus, ustatusWmask, mstatusUpdateSideEffect, ustatusRmask),
     MaskedRegMap(Uie, mie, uieMask, MaskedRegMap.Unwritable, uieMask),
-    MaskedRegMap(Utvec, utvec),
+    MaskedRegMap(Utvec, utvec, utvecMask, MaskedRegMap.NoSideEffect, utvecMask),
 
     // User Trap Handling
     MaskedRegMap(Uscratch, uscratch),
-    MaskedRegMap(Uepc, uepc),
+    MaskedRegMap(Uepc, uepc, uepcMask, MaskedRegMap.NoSideEffect, uepcMask),
     MaskedRegMap(Ucause, ucause),
     MaskedRegMap(Utval, utval),
     MaskedRegMap(Uip, mip.asUInt, 0.U(XLEN.W), MaskedRegMap.Unwritable, uipMask)
