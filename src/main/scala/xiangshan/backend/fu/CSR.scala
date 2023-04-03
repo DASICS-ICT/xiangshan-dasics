@@ -111,7 +111,7 @@ class CSRFileIO(implicit p: Parameters) extends XSBundle {
 }
 
 class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMPMethod with PMAMethod with HasTriggerConst
-  with SdtrigExt with DebugCSR
+  with SdtrigExt with DebugCSR with DasicsMethod
 {
   val csrio = IO(new CSRFileIO)
 
@@ -329,6 +329,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val pma = Wire(Vec(NumPMA, new PMPEntry())) // just used for method parameter
   val pmpMapping = pmp_gen_mapping(pmp_init, NumPMP, PmpcfgBase, PmpaddrBase, pmp)
   val pmaMapping = pmp_gen_mapping(pma_init, NumPMA, PmacfgBase, PmaaddrBase, pma)
+
+  // DASICS Mapping
+  val dasics: Vec[DasicsEntry] = Wire(Vec(NumDasicsBounds, new DasicsEntry()))  // just used for method parameter
+  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMapping(
+    init = dasicsInit, cfgBase = DasicsLibCfgBase, boundBase = DasicsLibBoundBase, entries = dasics
+  )
 
   // Superviser-Level CSRs
 
@@ -697,7 +703,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
                 pmaMapping ++
                 (if (HasFPU) fcsrMapping else Nil) ++
                 (if (HasCustomCSRCacheOp) cacheopMapping else Nil) ++
-                (if (HasNExtension) userMapping else Nil)
+                (if (HasNExtension) userMapping else Nil) ++
+                (if (HasDasics) dasicsMapping else Nil)
 
   println("XiangShan CSR Lists")
 

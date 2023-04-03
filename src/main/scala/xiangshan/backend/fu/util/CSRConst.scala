@@ -76,6 +76,10 @@ trait HasCSRConst {
   val Hpmcounter30  = 0xC1E
   val Hpmcounter31  = 0xC1F
 
+  // User DASICS registers
+  val DasicsLibCfgBase = 0x880
+  val DasicsLibBoundBase = 0x890
+
   // Supervisor Trap Setup
   val Sstatus       = 0x100
   val Sedeleg       = 0x102
