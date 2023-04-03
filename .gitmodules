@@ -3,7 +3,7 @@
 	url = git@172.16.32.118:/home/git/rocket-chip.git
 [submodule "difftest"]
 	path = difftest
-	url = git@172.16.32.118:/home/git/difftest.git
+	url = https://github.com/OpenXiangShan/difftest.git
 [submodule "ready-to-run"]
 	path = ready-to-run
 	url = https://github.com/OpenXiangShan/ready-to-run
