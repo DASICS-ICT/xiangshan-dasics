@@ -228,6 +228,8 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val sqIdx = new SqPtr
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
+  val dasicsUntrusted = Bool()
+
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
     val readReg = if (isFp) {

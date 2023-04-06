@@ -113,6 +113,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
   for (i <- 0 until RenameWidth) {
     uops(i).cf := io.in(i).bits.cf
     uops(i).ctrl := io.in(i).bits.ctrl
+    uops(i).dasicsUntrusted := io.in(i).bits.cf.dasicsUntrusted
 
     // update cf according to ssit result
     uops(i).cf.storeSetHit := io.ssit(i).valid
