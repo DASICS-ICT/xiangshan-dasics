@@ -149,7 +149,8 @@ package object xiangshan {
   }
 
   object ExceptionVec {
-    def apply() = Vec(16, Bool())
+    // 16 RV exception + 8 dasics excepiton
+    def apply() = Vec(16 + 8, Bool())
   }
 
   object PMAMode {
@@ -524,6 +525,20 @@ package object xiangshan {
     def loadPageFault       = 13
     // def singleStep          = 14
     def storePageFault      = 15
+
+    def dasicsUIntrAccessFault = 16
+    def dasicsSIntrAccessFault = 17
+
+    def dasicsULoadAccessFault = 18
+    def dasicsSLoadAccessFault = 19
+
+    def dasicsUStoreAccessFault = 20
+    def dasicsSStoreAccessFault = 21
+
+    def dasicsUEcallAccessFault = 22
+    def dasicsSEcallAccessFault = 23
+
+
     def priorities = Seq(
       breakPoint, // TODO: different BP has different priority
       instrPageFault,
@@ -536,7 +551,16 @@ package object xiangshan {
       storePageFault,
       loadPageFault,
       storeAccessFault,
-      loadAccessFault
+      loadAccessFault,
+
+      dasicsUIntrAccessFault,
+      dasicsSIntrAccessFault,
+      dasicsULoadAccessFault,
+      dasicsSLoadAccessFault,
+      dasicsUStoreAccessFault,
+      dasicsSLoadAccessFault,
+      dasicsUEcallAccessFault,
+      dasicsSEcallAccessFault
     )
     def all = priorities.distinct.sorted
     def frontendSet = Seq(
@@ -734,7 +758,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.loadCanAccept(uop.ctrl.fuType),
     FuType.ldu, 1, 0, writeIntRf = true, writeFpRf = true,
     latency = UncertainLatency(),
-    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault),
+    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault, dasicsULoadAccessFault, dasicsSLoadAccessFault),
     flushPipe = true,
     replayInst = true,
     hasLoadError = true,
@@ -747,7 +771,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.storeCanAccept(uop.ctrl.fuType),
     FuType.stu, 1, 0, writeIntRf = false, writeFpRf = false,
     latency = UncertainLatency(),
-    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault),
+    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault,dasicsUStoreAccessFault, dasicsSStoreAccessFault),
     trigger = true,
   )
 
