@@ -22,7 +22,7 @@ import chisel3.util._
 import utils._
 import xiangshan.ExceptionNO._
 import xiangshan._
-import xiangshan.backend.fu.PMPRespBundle
+import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsCheckFault}
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
 
 // Store Pipeline Stage 0
@@ -96,6 +96,7 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
     val lsq = ValidIO(new LsPipelineBundle())
     val dtlbResp = Flipped(DecoupledIO(new TlbResp()))
     val rsFeedback = ValidIO(new RSFeedback)
+    val dasicsReq = ValidIO(new DasicsReqBundle())
   })
 
   // mmio cbo decoder
@@ -107,6 +108,12 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   val s1_tlb_miss = io.dtlbResp.bits.miss
   val s1_mmio = is_mmio_cbo
   val s1_exception = ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR
+
+  //dasics check
+  io.dasicsReq.valid := io.in.valid  //TODO: temporarily assignment
+  io.dasicsReq.bits.addr := io.in.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.bits.inUntrustedZone := io.in.bits.uop.dasicsUntrusted
+  io.dasicsReq.bits.operation := DasicsOp.write
 
   io.in.ready := true.B
 
@@ -156,6 +163,7 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule {
     val pmpResp = Flipped(new PMPRespBundle)
     val static_pm = Input(Valid(Bool()))
     val out = Decoupled(new LsPipelineBundle)
+    val dasicsResp = Flipped(new DasicsRespBundle)
   })
   val pmp = WireInit(io.pmpResp)
   when (io.static_pm.valid) {
@@ -167,6 +175,10 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule {
 
   val s2_exception = ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR
   val is_mmio = io.in.bits.mmio || pmp.mmio
+
+  //dasics store access fault
+  io.in.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.writeDasicsFault
+  s2_exception(dasicsUStoreAccessFault) := io.in.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) 
 
   io.in.ready := true.B
   io.out.bits := io.in.bits
@@ -210,6 +222,9 @@ class StoreUnit(implicit p: Parameters) extends XSModule {
     val stout = DecoupledIO(new ExuOutput) // writeback store
     // store mask, send to sq in store_s0
     val storeMaskOut = Valid(new StoreMaskBundle)
+    //dasics
+    val dasicsReq = ValidIO(new DasicsReqBundle())
+    val dasicsResp = Flipped(new DasicsRespBundle())
   })
 
   val store_s0 = Module(new StoreUnit_S0)
@@ -222,6 +237,9 @@ class StoreUnit(implicit p: Parameters) extends XSModule {
   io.tlb.req_kill := false.B
   store_s0.io.rsIdx := io.rsIdx
   store_s0.io.isFirstIssue := io.isFirstIssue
+
+  io.dasicsReq := store_s1.io.dasicsReq
+  store_s2.io.dasicsResp := io.dasicsResp
 
   io.storeMaskOut.valid := store_s0.io.in.valid
   io.storeMaskOut.bits.mask := store_s0.io.out.bits.mask

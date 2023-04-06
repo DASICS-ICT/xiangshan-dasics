@@ -17,12 +17,7 @@ trait DasicsConst {
 object DasicsOp {
   def read   = "b00".U
   def write  = "b01".U
-  def jump   = "b02".U
-
-  def noDasicsFault    = "b00".U
-  def readDascisFault  = "b01".U
-  def writeDasicsFault = "b10".U
-  def jumpDasicsFault  = "b11".U
+  def jump   = "b10".U
 
   def apply() = UInt(2.W)
   def isWrite(op:UInt) = op === write

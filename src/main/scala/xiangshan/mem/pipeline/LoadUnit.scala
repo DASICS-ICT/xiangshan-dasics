@@ -22,7 +22,7 @@ import chisel3.util._
 import utils._
 import xiangshan.ExceptionNO._
 import xiangshan._
-import xiangshan.backend.fu.PMPRespBundle
+import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsCheckFault}
 import xiangshan.backend.fu.util.SdtrigExt
 import xiangshan.cache._
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
@@ -175,6 +175,7 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
     val rsFeedback = ValidIO(new RSFeedback)
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
     val needLdVioCheckRedo = Output(Bool())
+    val dasicsReq = ValidIO(new DasicsReqBundle())
   })
 
   val s1_uop = io.in.bits.uop
@@ -216,6 +217,12 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.loadViolationQueryReq.valid := io.in.valid && !(s1_exception || s1_tlb_miss || io.s1_kill)
   io.loadViolationQueryReq.bits.paddr := s1_paddr_dup_lsu
   io.loadViolationQueryReq.bits.uop := s1_uop
+
+  //dasics check
+  io.dasicsReq.valid := io.in.valid && !io.s1_kill //TODO: temporarily assignment
+  io.dasicsReq.bits.addr := io.in.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.bits.inUntrustedZone := io.in.bits.uop.dasicsUntrusted
+  io.dasicsReq.bits.operation := DasicsOp.read
 
   // Generate forwardMaskFast to wake up insts earlier
   val forwardMaskFast = io.lsq.forwardMaskFast.asUInt | io.sbuffer.forwardMaskFast.asUInt
@@ -284,6 +291,7 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
     val static_pm = Input(Valid(Bool())) // valid for static, bits for mmio
     val s2_can_replay_from_fetch = Output(Bool()) // dirty code
     val loadDataFromDcache = Output(new LoadDataFromDcacheBundle)
+    val dasicsResp = Flipped(new DasicsRespBundle)
   })
 
   val pmp = WireInit(io.pmpResp)
@@ -307,6 +315,10 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
     s2_exception_vec := 0.U.asTypeOf(s2_exception_vec.cloneType)
   }
   val s2_exception = ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR
+
+  //dasics load access fault
+  io.out.bits.uop.cf.exceptionVec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.readDascisFault
+  s2_exception(dasicsULoadAccessFault) := io.out.bits.uop.cf.exceptionVec(dasicsULoadAccessFault) 
 
   // writeback access fault caused by ecc error / bus error
   //
@@ -510,6 +522,10 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     val tlb = new TlbRequestIO(2)
     val pmp = Flipped(new PMPRespBundle()) // arrive same to tlb now
 
+    //dasics
+    val dasicsReq = ValidIO(new DasicsReqBundle())
+    val dasicsResp = Flipped(new DasicsRespBundle())
+
     // provide prefetch info
     val prefetch_train = ValidIO(new LsPipelineBundle())
 
@@ -556,6 +572,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   load_s1.io.loadViolationQueryReq <> io.lsq.loadViolationQuery.req
   load_s1.io.dcacheBankConflict <> io.dcache.s1_bank_conflict
   load_s1.io.csrCtrl <> io.csrCtrl
+  io.dasicsReq := load_s1.io.dasicsReq
 
   // provide paddr for lq
   io.lsq.loadPaddrIn.valid := load_s1.io.out.valid
@@ -640,6 +657,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
   load_s2.io.loadViolationQueryResp <> io.lsq.loadViolationQuery.resp
   load_s2.io.csrCtrl <> io.csrCtrl
   load_s2.io.sentFastUop := io.fastUop.valid
+  load_s2.io.dasicsResp := io.dasicsResp
 
   // feedback bank conflict / ld-vio check struct hazard to rs
   io.feedbackFast.bits := RegNext(load_s1.io.rsFeedback.bits)

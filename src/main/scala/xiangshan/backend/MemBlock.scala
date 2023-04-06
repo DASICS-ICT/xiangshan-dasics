@@ -251,6 +251,20 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     dtlb_st.foreach(_.ptw.resp.valid := ptw_resp_v && Cat(ptw_resp_next.vector.drop(ld_tlb_ports)).orR)
   }
 
+  // dasics memory access check
+  val dasics = Module(new Dasics())
+
+  val dasics_checkers = VecInit(Seq.fill(4)(
+    Module(new DasicsChecker(0)).io
+  )) //TODO: general Dasics check port config
+
+  val memDasicsReq  = storeUnits.map(_.io.dasicsReq) ++ loadUnits.map(_.io.dasicsReq)
+  val memDasicsResp = storeUnits.map(_.io.dasicsResp) ++ loadUnits.map(_.io.dasicsResp)
+
+  for( (dchecker,index) <- dasics_checkers.zipWithIndex){
+     dchecker.req := memDasicsReq(index)
+     memDasicsResp(index) := dchecker.resp
+  }
 
   // pmp
   val pmp = Module(new PMP())
