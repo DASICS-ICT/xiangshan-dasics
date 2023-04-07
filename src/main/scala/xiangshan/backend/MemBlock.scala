@@ -253,6 +253,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
 
   // dasics memory access check
   val dasics = Module(new Dasics())
+  dasics.io.distribute_csr <> csrCtrl.distribute_csr
 
   val dasics_checkers = VecInit(Seq.fill(4)(
     Module(new DasicsChecker(0)).io
