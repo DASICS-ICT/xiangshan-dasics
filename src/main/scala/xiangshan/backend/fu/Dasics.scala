@@ -31,22 +31,22 @@ object DasicsConfig extends DasicsConfig
 // For load/store only
 class DasicsEntry(implicit p: Parameters) extends XSBundle with DasicsConst {
   val cfg = new DasicsConfig
-  val boundHi, boundLo = UInt((XLEN - DasicsGrain).W) // bounds are 8-byte aligned
+  val boundHi, boundLo = UInt((VAddrBits - DasicsGrain).W) // bounds are 8-byte aligned
 
   // Lowest bits read/write as 0
-  def boundRegMask: UInt = (~((1 << DasicsGrain) - 1).U(XLEN.W)).asUInt
+  def boundRegMask: UInt = (~((1 << DasicsGrain) - 1).U(VAddrBits.W)).asUInt
 
   // Only check bounds, not checking permission
   def boundMatch(addr: UInt): Bool = {
-    val addrForComp = addr(XLEN - 1, DasicsGrain)
+    val addrForComp = addr(VAddrBits - 1, DasicsGrain)
     (addrForComp >= boundLo) && (addrForComp < boundHi)
   }
 
   // assign values (bounds parameter are XLEN-length)
   def gen(cfg: DasicsConfig, boundLo: UInt, boundHi: UInt): Unit = {
     this.cfg := cfg
-    this.boundLo := boundLo(XLEN - 1, DasicsGrain)
-    this.boundHi := boundHi(XLEN - 1, DasicsGrain)
+    this.boundLo := boundLo(VAddrBits - 1, DasicsGrain)
+    this.boundHi := boundHi(VAddrBits - 1, DasicsGrain)
   }
 }
 
