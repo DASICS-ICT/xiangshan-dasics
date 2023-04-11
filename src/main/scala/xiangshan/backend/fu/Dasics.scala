@@ -117,3 +117,44 @@ class Dasics(implicit p: Parameters) extends XSModule with DasicsMethod with Has
 
   io.entries := dasics
 }
+
+class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
+  val uEnable, sEnable = Bool()
+
+  private val UENA = 0x1
+  private val SENA = 0x0
+
+  def gen(reg: UInt): Unit = {
+    this.uEnable := reg(UENA)
+    this.sEnable := reg(SENA)
+  }
+}
+
+class DasicsMainBound(implicit p: Parameters) extends XSBundle with DasicsConst {
+  val boundHi, boundLo = UInt((VAddrBits - DasicsGrain).W)
+
+  // assign values (parameters are XLEN-length)
+  def gen(boundLo: UInt, boundHi: UInt): Unit = {
+    this.boundLo := boundLo(VAddrBits - 1, DasicsGrain)
+    this.boundHi := boundHi(VAddrBits - 1, DasicsGrain)
+  }
+}
+
+class DasicsTaggerIO(implicit p: Parameters) extends XSBundle {
+  val distribute_csr: DistributedCSRIO = Flipped(new DistributedCSRIO())
+  val privMode: UInt = Input(UInt(2.W))
+  val addr: UInt = Input(UInt(VAddrBits.W))
+  val notTrusted: Bool = Output(Bool())
+}
+
+// Tag every instruction as trusted/untrusted in frontend
+class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
+  val io: DasicsTaggerIO = IO(new DasicsTaggerIO())
+
+  val mainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val sMainBoundHi: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val sMainBoundLo: UInt = RegInit(UInt(XLEN.W), 0.U)
+
+
+  val w = io.distribute_csr.w
+}
