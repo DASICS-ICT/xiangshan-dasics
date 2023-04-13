@@ -219,9 +219,9 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.loadViolationQueryReq.bits.uop := s1_uop
 
   //dasics check
-  io.dasicsReq.valid := io.in.valid && !io.s1_kill //TODO: temporarily assignment
-  io.dasicsReq.bits.addr := io.in.bits.vaddr //TODO: need for alignment?
-  io.dasicsReq.bits.inUntrustedZone := io.in.bits.uop.dasicsUntrusted
+  io.dasicsReq.valid := io.out.fire() //TODO: temporarily assignment
+  io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.read
 
   // Generate forwardMaskFast to wake up insts earlier
@@ -317,8 +317,7 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
   val s2_exception = ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR
 
   //dasics load access fault
-  io.out.bits.uop.cf.exceptionVec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.readDascisFault
-  s2_exception(dasicsULoadAccessFault) := io.out.bits.uop.cf.exceptionVec(dasicsULoadAccessFault) 
+  s2_exception_vec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.readDascisFault 
 
   // writeback access fault caused by ecc error / bus error
   //

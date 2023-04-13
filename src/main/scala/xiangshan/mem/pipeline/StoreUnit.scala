@@ -110,9 +110,9 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   val s1_exception = ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR
 
   //dasics check
-  io.dasicsReq.valid := io.in.valid  //TODO: temporarily assignment
-  io.dasicsReq.bits.addr := io.in.bits.vaddr //TODO: need for alignment?
-  io.dasicsReq.bits.inUntrustedZone := io.in.bits.uop.dasicsUntrusted
+  io.dasicsReq.valid := io.out.fire()  //TODO: temporarily assignment
+  io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.write
 
   io.in.ready := true.B
@@ -177,8 +177,7 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule {
   val is_mmio = io.in.bits.mmio || pmp.mmio
 
   //dasics store access fault
-  io.in.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.writeDasicsFault
-  s2_exception(dasicsUStoreAccessFault) := io.in.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) 
+  io.out.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.writeDasicsFault
 
   io.in.ready := true.B
   io.out.bits := io.in.bits
