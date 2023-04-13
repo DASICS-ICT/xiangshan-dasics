@@ -196,7 +196,7 @@ class DasicsChecker(checkerConfig: Int)(implicit p: Parameters) extends XSModule
   val req = io.req
   val dasics_entries = io.resource
 
-  val dasics_mem_fault = dasics_mem_check(req, dasics_entries)
+  val dasics_mem_fault = RegNext(dasics_mem_check(req, dasics_entries), init = false.B)
   val dasics_jump_fault = false.B//dasics_jump_check(req.addr, req.inUntrustedZone, req.operation, dasics_entries)
 
   io.resp.dasics_fault := Mux(dasics_mem_fault ,
