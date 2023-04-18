@@ -1247,21 +1247,29 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.priviledgeMode := priviledgeMode
     difftest.io.mstatus := mstatus
     difftest.io.sstatus := mstatus & sstatusRmask
+    difftest.io.ustatus := mstatus & ustatusRmask
     difftest.io.mepc := mepc
     difftest.io.sepc := sepc
+    difftest.io.uepc := uepc
     difftest.io.mtval:= mtval
     difftest.io.stval:= stval
+    difftest.io.utval := utval
     difftest.io.mtvec := mtvec
     difftest.io.stvec := stvec
+    difftest.io.utvec := utvec
     difftest.io.mcause := mcause
     difftest.io.scause := scause
+    difftest.io.ucause := ucause
     difftest.io.satp := satp
     difftest.io.mip := mipReg
     difftest.io.mie := mie
     difftest.io.mscratch := mscratch
     difftest.io.sscratch := sscratch
+    difftest.io.uscratch := uscratch
     difftest.io.mideleg := mideleg
+    difftest.io.sedeleg := sedeleg
     difftest.io.medeleg := medeleg
+    difftest.io.sideleg := sideleg
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {
