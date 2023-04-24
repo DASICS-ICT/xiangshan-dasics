@@ -3,7 +3,7 @@
 	url = git@gitee.com:dasics/rocket-chip.git
 [submodule "difftest"]
 	path = difftest
-	url = https://github.com/OpenXiangShan/difftest.git
+	url = git@gitee.com:dasics/difftest.git
 [submodule "ready-to-run"]
 	path = ready-to-run
 	url = https://github.com/OpenXiangShan/ready-to-run
