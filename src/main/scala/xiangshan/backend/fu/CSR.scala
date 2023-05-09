@@ -331,9 +331,19 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val pmaMapping = pmp_gen_mapping(pma_init, NumPMA, PmacfgBase, PmaaddrBase, pma)
 
   // DASICS Mapping
+  val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasics: Vec[DasicsEntry] = Wire(Vec(NumDasicsBounds, new DasicsEntry()))  // just used for method parameter
   val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMapping(
     init = dasicsInit, cfgBase = DasicsLibCfgBase, boundBase = DasicsLibBoundBase, entries = dasics
+  ) ++ Map(
+    MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
+    MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
+    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
+    MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi)
   )
 
   // Superviser-Level CSRs

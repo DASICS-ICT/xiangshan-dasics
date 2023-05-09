@@ -133,6 +133,36 @@ class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
 class DasicsMainBound(implicit p: Parameters) extends XSBundle with DasicsConst {
   val boundHi, boundLo = UInt((VAddrBits - DasicsGrain).W)
 
+  def getPcTags(startAddr: UInt): Vec[Bool] = {
+    val startBlock = startAddr(VAddrBits - 1, DasicsGrain)
+    val startOffset = startAddr(DasicsGrain - 1, 1) // instructions are 2-byte aligned
+
+    // diff{Lo,Hi}: (VAddrBits, DasicsGrain) (with a sign bit)
+    val diffLo = boundLo -& startBlock
+    val diffHi = boundHi -& startBlock
+
+    val fetchBlock = FetchWidth * 4
+    val fetchGrain = log2Ceil(fetchBlock) // MinimalConfig: 4
+
+    // detect edge cases
+    val loClose = diffLo(VAddrBits - DasicsGrain, fetchGrain - DasicsGrain + 1) === 0.U
+    val hiClose = diffHi(VAddrBits - DasicsGrain, fetchGrain - DasicsGrain + 1) === 0.U
+
+    // get the low bits (fetchGrain, 0)
+    // TODO: the following only works for MinimalConfig (FetchWidth = 4)
+    val diffLoLSB = diffLo(fetchGrain - DasicsGrain, 0)
+    val diffHiLSB = diffHi(fetchGrain - DasicsGrain, 0)
+    val loBlockMask = (~0.U(3.W) << diffLoLSB)(2, 0).asBools
+    val loCloseMask = (Cat(loBlockMask.map(Fill(4, _)).reverse) >> startOffset)(7, 0)
+    val hiBlockMask = (Cat(0.U(3.W), ~0.U(3.W)) << diffHiLSB)(5, 3).asBools
+    val hiCloseMask = (Cat(hiBlockMask.map(Fill(4, _)).reverse) >> startOffset)(7, 0)
+
+    val loMask = Mux(diffLo(VAddrBits - DasicsGrain), Fill(8, 1.U(1.W)), Mux(loClose, loCloseMask, 0.U(8.W)))
+    val hiMask = Mux(diffHi(VAddrBits - DasicsGrain), 0.U(8.W), Mux(hiClose, hiCloseMask, Fill(8, 1.U(1.W))))
+
+    VecInit((loMask & hiMask).asBools)
+  }
+
   // assign values (parameters are XLEN-length)
   def gen(boundLo: UInt, boundHi: UInt): Unit = {
     this.boundLo := boundLo(VAddrBits - 1, DasicsGrain)
@@ -144,17 +174,42 @@ class DasicsTaggerIO(implicit p: Parameters) extends XSBundle {
   val distribute_csr: DistributedCSRIO = Flipped(new DistributedCSRIO())
   val privMode: UInt = Input(UInt(2.W))
   val addr: UInt = Input(UInt(VAddrBits.W))
-  val notTrusted: Bool = Output(Bool())
+  // TODO: change FetchWidth * 2 to PredictWidth, by accounting for non-C extension
+  val notTrusted: Vec[Bool] = Output(Vec(FetchWidth * 2, Bool()))
 }
 
 // Tag every instruction as trusted/untrusted in frontend
 class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
   val io: DasicsTaggerIO = IO(new DasicsTaggerIO())
 
-  val mainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val sMainBoundHi: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val sMainBoundLo: UInt = RegInit(UInt(XLEN.W), 0.U)
+  private val mainCfgReg = RegInit(UInt(XLEN.W), 0.U)
+  private val sMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
+  private val sMainBoundLo = RegInit(UInt(XLEN.W), 0.U)
+  private val uMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
+  private val uMainBoundLo = RegInit(UInt(XLEN.W), 0.U)
 
+  private val mainCfg = Wire(new DasicsMainCfg())
+  mainCfg.gen(mainCfgReg)
+  private val mainBound = Wire(new DasicsMainBound())
+  private val boundLo = Mux(io.privMode === ModeU, uMainBoundLo, sMainBoundLo)
+  private val boundHi = Mux(io.privMode === ModeU, uMainBoundHi, sMainBoundHi)
+  mainBound.gen(boundLo, boundHi)
+  private val cmpTags = mainBound.getPcTags(io.addr)
+  io.notTrusted := Mux(
+    io.privMode === ModeU && mainCfg.uEnable || io.privMode === ModeS && mainCfg.sEnable,
+    cmpTags,
+    VecInit(Seq.fill(FetchWidth * 2)(false.B))
+  )
 
   val w = io.distribute_csr.w
+  val mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = Map(
+    MaskedRegMap(DasicsSMainCfg, mainCfgReg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
+    MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
+    MaskedRegMap(DasicsUMainCfg, mainCfgReg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
+    MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
+  )
+  val rdata: UInt = Wire(UInt(XLEN.W))
+  MaskedRegMap.generate(mapping, w.bits.addr, rdata, w.valid, w.bits.data)
 }
