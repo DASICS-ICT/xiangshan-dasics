@@ -47,7 +47,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
   val acf = Bool()
   val crossPageIPFFix = Bool()
   val triggered = new TriggerCf
-  //val dasicsUntrusted = Bool()
+  val dasicsUntrusted = Bool()
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
     inst   := fetch.instrs(i)
@@ -61,7 +61,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     acf := fetch.acf(i)
     crossPageIPFFix := fetch.crossPageIPFFix(i)
     triggered := fetch.triggered(i)
-    //dasicsUntrusted := fetch.dasicsUntrusted(i)
+    dasicsUntrusted := fetch.dasicsUntrusted(i)
     this
   }
 
@@ -84,8 +84,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     cf.ssid := DontCare
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
-    cf.dasicsUntrusted := DontCare
-    //cf.dasicsUntrusted := dasicsUntrusted
+    cf.dasicsUntrusted := dasicsUntrusted
     cf
   }
 }

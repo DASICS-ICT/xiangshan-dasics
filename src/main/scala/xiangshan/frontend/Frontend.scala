@@ -21,7 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
-import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle}
+import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger}
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 
@@ -94,6 +94,13 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.pmp(1).resp <> pmp_check(1).resp
   icache.io.pmp(2).resp <> pmp_check(2).resp
   ifu.io.pmp.resp <> pmp_check(3).resp
+
+  // dasicsTagger
+  val dasicsTagger: DasicsTagger = Module(new DasicsTagger())
+  dasicsTagger.io.distribute_csr := csrCtrl.distribute_csr
+  dasicsTagger.io.privMode := tlbCsr.priv.imode
+  dasicsTagger.io.addr := ifu.io.dasics.startAddr
+  ifu.io.dasics.notTrusted := dasicsTagger.io.notTrusted
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))
   // tlb_req_arb.io.in(0) <> ifu.io.iTLBInter.req

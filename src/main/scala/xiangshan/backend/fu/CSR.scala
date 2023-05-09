@@ -331,9 +331,19 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val pmaMapping = pmp_gen_mapping(pma_init, NumPMA, PmacfgBase, PmaaddrBase, pma)
 
   // DASICS Mapping
+  val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasics: Vec[DasicsEntry] = Wire(Vec(NumDasicsBounds, new DasicsEntry()))  // just used for method parameter
   val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMapping(
     init = dasicsInit, cfgBase = DasicsLibCfgBase, boundBase = DasicsLibBoundBase, entries = dasics
+  ) ++ Map(
+    MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
+    MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
+    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
+    MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi)
   )
 
   // Superviser-Level CSRs
@@ -1254,21 +1264,29 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.priviledgeMode := priviledgeMode
     difftest.io.mstatus := mstatus
     difftest.io.sstatus := mstatus & sstatusRmask
+    difftest.io.ustatus := mstatus & ustatusRmask
     difftest.io.mepc := mepc
     difftest.io.sepc := sepc
+    difftest.io.uepc := uepc
     difftest.io.mtval:= mtval
     difftest.io.stval:= stval
+    difftest.io.utval := utval
     difftest.io.mtvec := mtvec
     difftest.io.stvec := stvec
+    difftest.io.utvec := utvec
     difftest.io.mcause := mcause
     difftest.io.scause := scause
+    difftest.io.ucause := ucause
     difftest.io.satp := satp
     difftest.io.mip := mipReg
     difftest.io.mie := mie
     difftest.io.mscratch := mscratch
     difftest.io.sscratch := sscratch
+    difftest.io.uscratch := uscratch
     difftest.io.mideleg := mideleg
+    difftest.io.sedeleg := sedeleg
     difftest.io.medeleg := medeleg
+    difftest.io.sideleg := sideleg
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {

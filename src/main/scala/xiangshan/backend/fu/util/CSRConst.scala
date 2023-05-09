@@ -111,6 +111,11 @@ trait HasCSRConst {
 
   val Sdsid         = 0x9C0
 
+  // Supervisor DASICS Settings (for User protection)
+  val DasicsUMainCfg = 0x9E0
+  val DasicsUMainBoundLo = 0x9E2
+  val DasicsUMainBoundHi = 0x9E3
+
   // Machine Information Registers
   val Mvendorid     = 0xF11
   val Marchid       = 0xF12
@@ -223,6 +228,11 @@ trait HasCSRConst {
   val Dpc           = 0x7B1
   val Dscratch0     = 0x7B2
   val Dscratch1     = 0x7B3
+
+  // Machine DASICS Settings (for Supervisor protection)
+  val DasicsSMainCfg = 0xBC0
+  val DasicsSMainBoundLo = 0xBC2
+  val DasicsSMainBoundHi = 0xBC3
 
   def privEcall  = 0x000.U
   def privEbreak = 0x001.U
