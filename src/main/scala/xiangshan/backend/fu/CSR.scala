@@ -1048,8 +1048,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     p"backend hit vec ${Binary(csrio.exception.bits.uop.cf.trigger.backendHit.asUInt)}\n")
 
   val hasExceptionVec = csrio.exception.bits.uop.cf.exceptionVec
+  val regularExceptionVec = hasExceptionVec.take(16)
+  val dasicsExceptionVec = ExceptionNO.selectDasics(hasExceptionVec)
   val regularExceptionNO = ExceptionNO.priorities.foldRight(0.U)((i: Int, sum: UInt) => Mux(hasExceptionVec(i), i.U, sum))
-  val exceptionNO = Mux(hasSingleStep || hasTriggerFire, 3.U, regularExceptionNO)
+  val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + dasicsExcOffset).U, sum)) 
+  
+  val exceptionNO = Mux(hasSingleStep || hasTriggerFire, 3.U, Mux(regularExceptionVec.reduce(_||_),regularExceptionNO,dasicsExceptionNo))
   val causeNO = (hasIntr << (XLEN-1)).asUInt | Mux(hasIntr, intrNOReg, exceptionNO)
 
   val hasExceptionIntr = csrio.exception.valid

@@ -526,18 +526,21 @@ package object xiangshan {
     // def singleStep          = 14
     def storePageFault      = 15
 
-    def dasicsUIntrAccessFault = 16
-    def dasicsSIntrAccessFault = 17
+    //exception 16-23 is reserve
 
-    def dasicsULoadAccessFault = 18
-    def dasicsSLoadAccessFault = 19
+    def dasicsExcOffset = 8
+    //  dasics excetption       number    offset
+    def dasicsUIntrAccessFault = 24 - dasicsExcOffset
+    def dasicsSIntrAccessFault = 25 - dasicsExcOffset
 
-    def dasicsUStoreAccessFault = 20
-    def dasicsSStoreAccessFault = 21
+    def dasicsULoadAccessFault = 26 - dasicsExcOffset
+    def dasicsSLoadAccessFault = 27 - dasicsExcOffset
 
-    def dasicsUEcallAccessFault = 22
-    def dasicsSEcallAccessFault = 23
+    def dasicsUStoreAccessFault = 28 - dasicsExcOffset
+    def dasicsSStoreAccessFault = 29 - dasicsExcOffset
 
+    def dasicsUEcallAccessFault = 30 - dasicsExcOffset
+    def dasicsSEcallAccessFault = 31 - dasicsExcOffset
 
     def priorities = Seq(
       breakPoint, // TODO: different BP has different priority
@@ -569,12 +572,23 @@ package object xiangshan {
       illegalInstr,
       instrPageFault
     )
+    def dasicsSet = Seq(
+      dasicsUIntrAccessFault,
+      dasicsSIntrAccessFault,
+      dasicsULoadAccessFault,
+      dasicsSLoadAccessFault,
+      dasicsUStoreAccessFault,
+      dasicsSLoadAccessFault,
+      dasicsUEcallAccessFault,
+      dasicsSEcallAccessFault
+    )
     def partialSelect(vec: Vec[Bool], select: Seq[Int]): Vec[Bool] = {
       val new_vec = Wire(ExceptionVec())
       new_vec.foreach(_ := false.B)
       select.foreach(i => new_vec(i) := vec(i))
       new_vec
     }
+    def selectDasics(vec:Vec[Bool]): Vec[Bool] = partialSelect(vec, dasicsSet)
     def selectFrontend(vec: Vec[Bool]): Vec[Bool] = partialSelect(vec, frontendSet)
     def selectAll(vec: Vec[Bool]): Vec[Bool] = partialSelect(vec, ExceptionNO.all)
     def selectByFu(vec:Vec[Bool], fuConfig: FuConfig): Vec[Bool] =
