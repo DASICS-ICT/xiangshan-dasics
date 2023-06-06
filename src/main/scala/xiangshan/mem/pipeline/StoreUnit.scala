@@ -183,7 +183,8 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule {
   io.out.valid := io.in.valid && (!is_mmio || s2_exception)
 
   //dasics store access fault
-  io.out.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.writeDasicsFault
+  io.out.bits.uop.cf.exceptionVec(dasicsSStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.SWriteDasicsFault
+  io.out.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.UWriteDasicsFault
 }
 
 class StoreUnit_S3(implicit p: Parameters) extends XSModule {

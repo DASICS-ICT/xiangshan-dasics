@@ -26,12 +26,18 @@ object DasicsOp{
 }
 
 object DasicsCheckFault {
-    def noDasicsFault = "b00".U
-    def readDascisFault = "b01".U
-    def writeDasicsFault = "b10".U
-    def jumpDasicsFault = "b11".U
+    def noDasicsFault     = "b000".U
 
-    def apply() = UInt(2.W)
+
+    def SReadDascisFault  = "b001".U
+    def SWriteDasicsFault = "b010".U
+    def SJumpDasicsFault  = "b011".U
+
+    def UReadDascisFault  = "b100".U
+    def UWriteDasicsFault = "b101".U
+    def UJumpDasicsFault  = "b110".U
+    
+    def apply() = UInt(3.W)
 }
 
 // For load/store only
@@ -150,6 +156,7 @@ class DasicsRespBundle(implicit p: Parameters) extends XSBundle with DasicsConst
 }
 
 class DasicsCheckerIO(implicit p: Parameters) extends XSBundle with DasicsConst{
+  val mode = Input(UInt(4.W))
   val resource = Flipped(Output(Vec(NumDasicsBounds, new DasicsEntry())))
   val req = Flipped(Valid(new DasicsReqBundle()))
   val resp = new DasicsRespBundle()
@@ -190,6 +197,7 @@ trait DasicsCheckerMethod {
 class DasicsChecker(checkerConfig: Int)(implicit p: Parameters) extends XSModule
   with DasicsCheckerMethod
   with DasicsConst
+  with HasCSRConst
 {
   val io = IO(new DasicsCheckerIO)
 
@@ -199,9 +207,22 @@ class DasicsChecker(checkerConfig: Int)(implicit p: Parameters) extends XSModule
   val dasics_mem_fault = RegNext(dasics_mem_check(req, dasics_entries), init = false.B)
   val dasics_jump_fault = false.B//dasics_jump_check(req.addr, req.inUntrustedZone, req.operation, dasics_entries)
 
-  io.resp.dasics_fault := Mux(dasics_mem_fault ,
-                            Mux(DasicsOp.isRead(req.bits.operation),DasicsCheckFault.readDascisFault, DasicsCheckFault.writeDasicsFault),
-                            Mux(dasics_jump_fault, DasicsCheckFault.jumpDasicsFault, DasicsCheckFault.noDasicsFault))
+  
+  io.resp.dasics_fault := DasicsCheckFault.noDasicsFault 
+  when(io.mode === ModeS){
+    when(DasicsOp.isRead(req.bits.operation) && dasics_mem_fault){
+      io.resp.dasics_fault := DasicsCheckFault.SReadDascisFault
+    }.elsewhen(DasicsOp.isWrite(req.bits.operation) && dasics_mem_fault){
+      io.resp.dasics_fault := DasicsCheckFault.SWriteDasicsFault
+    }
+  }.elsewhen(io.mode === ModeU){
+    when(DasicsOp.isRead(req.bits.operation) && dasics_mem_fault){
+      io.resp.dasics_fault := DasicsCheckFault.UReadDascisFault
+    }.elsewhen(DasicsOp.isWrite(req.bits.operation) && dasics_mem_fault){
+      io.resp.dasics_fault := DasicsCheckFault.UWriteDasicsFault
+    }    
+  }
+    
 }
 
 class DasicsMainCfg(implicit p: Parameters) extends XSBundle {

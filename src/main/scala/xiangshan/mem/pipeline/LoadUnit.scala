@@ -317,7 +317,8 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
   val s2_exception = ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR
 
   //dasics load access fault
-  s2_exception_vec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.readDascisFault 
+  s2_exception_vec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.UReadDascisFault
+  s2_exception_vec(dasicsSLoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.SReadDascisFault 
 
   // writeback access fault caused by ecc error / bus error
   //
