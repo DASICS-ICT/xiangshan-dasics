@@ -80,6 +80,13 @@ trait HasCSRConst {
   val DasicsLibCfgBase = 0x880
   val DasicsLibBoundBase = 0x890
 
+  val DasicsMainCall  = 0x8b0
+  val DasicsReturnPc  = 0x8b1
+  val DasicsActiveZoneRetrunPC = 0x8b2
+
+  val DasicsJmpCfgBase = 0x8c8
+  val DasicsJmpBoundBase = 0x8c0
+  
   // Supervisor Trap Setup
   val Sstatus       = 0x100
   val Sedeleg       = 0x102

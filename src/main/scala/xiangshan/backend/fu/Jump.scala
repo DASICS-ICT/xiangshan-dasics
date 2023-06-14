@@ -24,6 +24,7 @@ import utils._
 import xiangshan.backend._
 import xiangshan.backend.decode.ImmUnion
 import xiangshan.backend.decode.isa._
+import xiangshan.ExceptionNO._
 
 trait HasRedirectOut { this: XSModule =>
   val redirectOutValid = IO(Output(Bool()))
@@ -62,6 +63,8 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
 }
 
 class Jump(implicit p: Parameters) extends FUWithRedirect {
+  
+  val dasics_resp = IO(Input(new DasicsRespBundle()))
 
   val (src1, jalr_target, pc, immMin, func, uop) = (
     io.in.bits.src(0),
@@ -98,6 +101,9 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   io.out.valid := valid
   io.out.bits.uop <> io.in.bits.uop
   io.out.bits.data := jumpDataModule.io.result
+
+  io.out.bits.uop.cf.exceptionVec(dasicsSIntrAccessFault) := dasics_resp.dasics_fault === DasicsCheckFault.SJumpDasicsFault
+  io.out.bits.uop.cf.exceptionVec(dasicsUIntrAccessFault) := dasics_resp.dasics_fault === DasicsCheckFault.UJumpDasicsFault
 
   // NOTE: the debug info is for one-cycle exec, if FMV needs multi-cycle, may needs change it
   XSDebug(io.in.valid, "In(%d %d) Out(%d %d) Redirect:(%d %d %d)\n",

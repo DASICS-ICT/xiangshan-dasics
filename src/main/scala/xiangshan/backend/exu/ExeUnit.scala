@@ -24,7 +24,7 @@ import chisel3.util._
 import utils._
 import xiangshan._
 import xiangshan.backend.fu.fpu.{FMA, FPUSubModule}
-import xiangshan.backend.fu.{CSR, FUWithRedirect, Fence, FenceToSbuffer}
+import xiangshan.backend.fu._
 
 class FenceIO(implicit p: Parameters) extends XSBundle {
   val sfence = Output(new SfenceBundle)
@@ -70,6 +70,40 @@ class ExeUnit(config: ExuConfig)(implicit p: Parameters) extends Exu(config) {
     fenceio.get.sbuffer <> fence.toSbuffer
     fence.io.out.ready := true.B
     fence.disableSfence := disableSfence
+  }
+
+  //dasics jump check
+  if(config.fuConfigs.contains(csrCfg) && config.fuConfigs.contains((jmpCfg))){
+    //For JumpCSRExeUnitCfg
+    val csr = functionUnits.collectFirst{
+      case c: CSR => c
+    }.get
+    val csr_mode = csr.csrio.customCtrl.mode
+    val csr_distributed_write = csr.csrio.customCtrl.distribute_csr
+
+    val jump = functionUnits.collectFirst{
+      case j: Jump => j
+    }.get 
+
+    val (jump_valid, jump_func) = (jump.io.in.valid, jump.io.in.bits.uop.ctrl.fuOpType)
+    val (jump_ins_untrusted, jump_target)  = (jump.io.in.bits.uop.dasicsUntrusted, jump.redirectOut.cfiUpdate.target)
+    val jump_pc = jump.io.in.bits.src(1)(VAddrBits - 1, 0)
+
+    //dasics jump modules
+    val dasics = Module(new JumpDasics)
+    dasics.io.distribute_csr := csr_distributed_write
+
+    val dasics_jump_checker = Module(new DasicsJumpChecker)
+
+    dasics_jump_checker.io.req.valid := jump_valid && JumpOpType.jumpOpisJump(jump_func)  //only check jump (jal/jalr) instruction
+    dasics_jump_checker.io.connect( mode = csr_mode, 
+                                    pc = jump_pc, 
+                                    addr = jump_target, 
+                                    inUntrustedZone = jump_ins_untrusted, 
+                                    operation = DasicsOp.jump,
+                                    contro_flow = dasics.io.control_flow)
+  
+    jump.dasics_resp := dasics_jump_checker.io.resp
   }
 
   val fpModules = functionUnits.zip(config.fuConfigs.zipWithIndex).filter(_._1.isInstanceOf[FPUSubModule])

@@ -334,16 +334,26 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
-  val dasics: Vec[DasicsEntry] = Wire(Vec(NumDasicsBounds, new DasicsEntry()))  // just used for method parameter
-  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMapping(
-    init = dasicsInit, cfgBase = DasicsLibCfgBase, boundBase = DasicsLibBoundBase, entries = dasics
+
+  val dasicsMainCall: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsAZoneReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasics_mem: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
+  val dasics_jump: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
+  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMemMapping(
+    mem_init = dasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasics_mem
+  ) ++ dasicsGenJumpMapping(
+    jump_init = dasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasics_jump
   ) ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, "hf".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
     MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, "h2".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
-    MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi)
+    MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
+    MaskedRegMap(DasicsMainCall, dasicsMainCall),
+    MaskedRegMap(DasicsReturnPc, dasicsReturnPc),
+    MaskedRegMap(DasicsActiveZoneRetrunPC, dasicsAZoneReturnPc) 
   )
 
   // Superviser-Level CSRs
@@ -632,7 +642,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "hb3ff".U(XLEN.W)),
+    MaskedRegMap(Medeleg, medeleg, "hff00b3ff".U(XLEN.W)),
     MaskedRegMap(Mideleg, mideleg, "h222".U(XLEN.W)),
     MaskedRegMap(Mie, mie),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
