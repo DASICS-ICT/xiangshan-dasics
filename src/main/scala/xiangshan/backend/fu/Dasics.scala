@@ -494,7 +494,7 @@ class DasicsMainBound(implicit p: Parameters) extends XSBundle with DasicsConst 
     val loMask = Mux(diffLo(VAddrBits - DasicsGrainBit), Fill(8, 1.U(1.W)), Mux(loClose, loCloseMask, 0.U(8.W)))
     val hiMask = Mux(diffHi(VAddrBits - DasicsGrainBit), 0.U(8.W), Mux(hiClose, hiCloseMask, Fill(8, 1.U(1.W))))
 
-    VecInit((loMask & hiMask).asBools)
+    VecInit((~(loMask & hiMask)).asBools) // tags mean untrusted, so revert them
   }
 
   // assign values (parameters are XLEN-length)
