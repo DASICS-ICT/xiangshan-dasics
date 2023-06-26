@@ -348,7 +348,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, "hf".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = "h2".U(XLEN.W), rmask = "h2".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
     MaskedRegMap(DasicsMainCall, dasicsMainCall),
@@ -1044,6 +1044,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasLoadAccessFault    = hasException && exceptionVecFromRob(loadAccessFault)
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
+  val hasDasicsULoadFault   = hasException && exceptionVecFromRob(dasicsULoadAccessFault)
+  val hasDasicsSLoadFault   = hasException && exceptionVecFromRob(dasicsSLoadAccessFault)
+  val hasDasicsUStoreFault  = hasException && exceptionVecFromRob(dasicsUStoreAccessFault)
+  val hasDasicsSStoreFault  = hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
   val triggerFrontendHitVec = csrio.exception.bits.uop.cf.trigger.frontendHit
@@ -1099,7 +1103,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     hasLoadAccessFault,
     hasStoreAccessFault,
     hasLoadAddrMisalign,
-    hasStoreAddrMisalign
+    hasStoreAddrMisalign,
+    hasDasicsSLoadFault,
+    hasDasicsULoadFault,
+    hasDasicsSStoreFault,
+    hasDasicsUStoreFault
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
       val tval = Mux(
@@ -1124,8 +1132,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   private val delegVecM = Mux(hasIntr, mideleg , medeleg)
   private val delegVecS = Mux(hasIntr, sideleg, sedeleg)
   // val delegS = ((deleg & (1 << (causeNO & 0xf))) != 0) && (priviledgeMode < ModeM);
-  private val delegS = delegVecM(causeNO(3,0)) && (priviledgeMode < ModeM)
-  private val delegU = delegVecS(causeNO(3,0)) && (priviledgeMode < ModeS)
+  private val delegS = delegVecM(causeNO(7,0)) && (priviledgeMode < ModeM)
+  private val delegU = delegVecS(causeNO(7,0)) && (priviledgeMode < ModeS)
   val clearTval = !updateTval || hasIntr
 
   // ctrl block will use theses later for flush

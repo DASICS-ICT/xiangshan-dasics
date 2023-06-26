@@ -49,9 +49,9 @@ abstract class DasicsConfig extends Bundle
 class DasicsMemConfig extends DasicsConfig {
   val v: Bool = Bool()  // valid
   val u: Bool = Bool()  // unused
-  val w: Bool = Bool()  // write
   val r: Bool = Bool()  // read
-
+  val w: Bool = Bool()  // write
+  
   def valid: Bool = v
   def write: Bool = w
   def read: Bool = r
@@ -97,8 +97,8 @@ class DasicsEntry(implicit p: Parameters) extends XSBundle with DasicsConst {
   // assign values (bounds parameter are XLEN-length)
   def gen(cfg: DasicsConfig, boundLo: UInt, boundHi: UInt): Unit = {
     this.cfg := cfg
-    this.boundLo := boundLo(VAddrBits - 1, DasicsGrainBit)
-    this.boundHi := boundHi(VAddrBits - 1, DasicsGrainBit)
+    this.boundLo := Cat(boundLo(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
+    this.boundHi := Cat(boundHi(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
   }
 }
 
@@ -120,8 +120,8 @@ class DasicsJumpEntry(implicit p: Parameters) extends XSBundle with DasicsConst 
   // assign values (bounds parameter are XLEN-length)
   def gen(cfg: DasicsConfig, boundLo: UInt, boundHi: UInt): Unit = {
     this.cfg := cfg
-    this.boundLo := boundLo(VAddrBits - 1, DasicsGrainBit)
-    this.boundHi := boundHi(VAddrBits - 1, DasicsGrainBit)
+    this.boundLo := Cat(boundLo(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
+    this.boundHi := Cat(boundHi(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
   }
 }
 

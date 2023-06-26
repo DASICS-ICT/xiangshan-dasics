@@ -562,7 +562,7 @@ package object xiangshan {
       dasicsULoadAccessFault,
       dasicsSLoadAccessFault,
       dasicsUStoreAccessFault,
-      dasicsSLoadAccessFault,
+      dasicsSStoreAccessFault,
       dasicsUEcallAccessFault,
       dasicsSEcallAccessFault
     )
@@ -579,7 +579,7 @@ package object xiangshan {
       dasicsULoadAccessFault,
       dasicsSLoadAccessFault,
       dasicsUStoreAccessFault,
-      dasicsSLoadAccessFault,
+      dasicsSStoreAccessFault,
       dasicsUEcallAccessFault,
       dasicsSEcallAccessFault
     )
@@ -655,7 +655,9 @@ package object xiangshan {
     writeIntRf = true,
     writeFpRf = false,
     hasRedirect = true,
+    exceptionOut = Seq(dasicsUIntrAccessFault, dasicsSIntrAccessFault)
   )
+
 
   val fenceCfg = FuConfig(
     name = "fence",
