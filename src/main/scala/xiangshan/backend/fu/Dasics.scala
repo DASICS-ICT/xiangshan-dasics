@@ -476,23 +476,36 @@ class DasicsMainBound(implicit p: Parameters) extends XSBundle with DasicsConst 
     val diffHi = boundHi -& startBlock
 
     val fetchBlock = FetchWidth * 4
-    val fetchGrain = log2Ceil(fetchBlock) // MinimalConfig: 4
+    val fetchGrain = log2Ceil(fetchBlock) // MinimalConfig: 4; DefConfig: 8
+    val numDasicsBlocks = fetchBlock / DasicsGrain // MinConf: 2; DefConf: 4
+    val instPerDasicsBlock = DasicsGrain / 2 // 4 compressed instructions per Dasics block
 
     // detect edge cases
     val loClose = diffLo(VAddrBits - DasicsGrainBit, fetchGrain - DasicsGrainBit + 1) === 0.U
     val hiClose = diffHi(VAddrBits - DasicsGrainBit, fetchGrain - DasicsGrainBit + 1) === 0.U
 
     // get the low bits (fetchGrain, 0)
-    // TODO: the following only works for MinimalConfig (FetchWidth = 4)
     val diffLoLSB = diffLo(fetchGrain - DasicsGrainBit, 0)
     val diffHiLSB = diffHi(fetchGrain - DasicsGrainBit, 0)
-    val loBlockMask = (~0.U(3.W) << diffLoLSB)(2, 0).asBools
-    val loCloseMask = (Cat(loBlockMask.map(Fill(4, _)).reverse) >> startOffset)(7, 0)
-    val hiBlockMask = (Cat(0.U(3.W), ~0.U(3.W)) << diffHiLSB)(5, 3).asBools
-    val hiCloseMask = (Cat(hiBlockMask.map(Fill(4, _)).reverse) >> startOffset)(7, 0)
 
-    val loMask = Mux(diffLo(VAddrBits - DasicsGrainBit), Fill(8, 1.U(1.W)), Mux(loClose, loCloseMask, 0.U(8.W)))
-    val hiMask = Mux(diffHi(VAddrBits - DasicsGrainBit), 0.U(8.W), Mux(hiClose, hiCloseMask, Fill(8, 1.U(1.W))))
+    val maskGen = 0.U((numDasicsBlocks + 1).W) // MinConf: 000; DefConf: 00000
+    val loBlockMask = (~maskGen << diffLoLSB)(numDasicsBlocks, 0).asBools
+    val loCloseMask =
+      (VecInit(loBlockMask.map(Fill(instPerDasicsBlock, _))).asUInt >> startOffset)(FetchWidth * 2 - 1, 0)
+    val hiBlockMask = (Cat(maskGen, ~maskGen) << diffHiLSB)(2 * numDasicsBlocks + 1, numDasicsBlocks + 1).asBools
+    val hiCloseMask =
+      (VecInit(hiBlockMask.map(Fill(instPerDasicsBlock, _))).asUInt >> startOffset)(FetchWidth * 2 - 1, 0)
+
+    val loMask = Mux(
+      diffLo(VAddrBits - DasicsGrainBit),
+      Fill(FetchWidth * 2, 1.U(1.W)), // boundLo < startAddr
+      Mux(loClose, loCloseMask, 0.U((FetchWidth * 2).W))
+    )
+    val hiMask = Mux(
+      diffHi(VAddrBits - DasicsGrainBit),
+      0.U((FetchWidth * 2).W),  // boundHi < startAddr
+      Mux(hiClose, hiCloseMask, Fill(FetchWidth * 2, 1.U(1.W)))
+    )
 
     VecInit((~(loMask & hiMask)).asBools) // tags mean untrusted, so revert them
   }

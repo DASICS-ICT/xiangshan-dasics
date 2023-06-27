@@ -58,7 +58,7 @@ class UncacheInterface(implicit p: Parameters) extends XSBundle {
 
 class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
   val startAddr: UInt = Output(UInt(VAddrBits.W))
-  val notTrusted: Vec[Bool] = Input(Vec(PredictWidth, Bool()))
+  val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
@@ -205,7 +205,12 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   // create DASICS tags at IFU stage 1
   io.dasics.startAddr := f1_ftq_req.startAddr
-  val f1_dasics_tag: Vec[Bool] = io.dasics.notTrusted
+  val f1_dasics_tag: Vec[Bool] = Wire(Vec(PredictWidth, Bool()))
+  if (HasCExtension) {
+    f1_dasics_tag := io.dasics.notTrusted
+  } else {  // not compressed, discard half of the tags
+    f1_dasics_tag.zipWithIndex.foreach { case (tag, i) => tag := io.dasics.notTrusted(i * 2) }
+  }
 
   /**
     ******************************************************************************
