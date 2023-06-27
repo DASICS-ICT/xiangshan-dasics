@@ -593,6 +593,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     XSTrapDecode.table ++
     BDecode.table ++
     CBODecode.table ++
+    NDecode.table ++
     SvinvalDecode.table
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
   val luiMatch = (t: Seq[BitPat]) => t(3).value == FuType.alu.litValue && t.reverse.head.value == SelImm.IMM_U.litValue
