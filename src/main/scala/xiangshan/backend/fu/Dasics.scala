@@ -191,8 +191,8 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
     val jump_init_value = jump_init()
 
     class DasicsJumpConfigExt extends DasicsConfig{
-      val data = new DasicsJumpConfig
       val reserve = UInt((16 - DasicsJumpConfig.getWidth).W)
+      val data = new DasicsJumpConfig
     } 
 
     // DasicsConfigs merged into CSR
@@ -344,12 +344,11 @@ class JumpDasics(implicit p: Parameters) extends XSModule
 
   val isDasicsRet   = false.B   //TODO: add dasicst return instruction
   val isTrustedZone = io.control_flow.under_check.valid && io.control_flow.under_check.bits.pc_in_trust_zone
-  val targetInTrustedZone = io.control_flow.under_check.valid 
-    (mode === ModeU && mainCfg.uEnable || mode === ModeS && mainCfg.sEnable)
+  val targetInTrustedZone = io.control_flow.under_check.valid && (mode === ModeU && mainCfg.uEnable || mode === ModeS && mainCfg.sEnable) &&
     dasics_jump_in_bound(addr = target(VAddrBits -1, 0), boundHi = boundHi(VAddrBits -1, 0), boundLo = boundLo(VAddrBits -1, 0))
   
-  val targetInActiveZone  = io.control_flow.under_check.valid && dasics_jump_check(target, dasics)
-  val isActiveZone        = io.control_flow.under_check.valid && dasics_jump_check(pc, dasics)
+  val targetInActiveZone  = io.control_flow.under_check.valid && !dasics_jump_check(target, dasics)
+  val isActiveZone        = io.control_flow.under_check.valid && !dasics_jump_check(pc, dasics)
 
   val legalJumpTarget = isTrustedZone  || 
                         (!isTrustedZone &&  targetInTrustedZone && (target === dasics_return_pc || target === dasics_main_call)) ||
@@ -436,7 +435,7 @@ class DasicsJumpChecker(implicit p: Parameters) extends XSModule
   dasics_contro_flow.under_check.valid := req.valid
   dasics_contro_flow.under_check.bits.mode := io.mode
   dasics_contro_flow.under_check.bits.pc   := io.pc
-  dasics_contro_flow.under_check.bits.pc_in_trust_zone := io.req.bits.inUntrustedZone
+  dasics_contro_flow.under_check.bits.pc_in_trust_zone := !io.req.bits.inUntrustedZone
   dasics_contro_flow.under_check.bits.target := req.bits.addr
 
   //dasics jump bound checking
