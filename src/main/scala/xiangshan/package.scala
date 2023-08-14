@@ -204,14 +204,18 @@ package object xiangshan {
 
   // jump
   object JumpOpType {
-    def jal  = "b00".U
-    def jalr = "b01".U
-    def auipc = "b10".U
+    def jal  = "b000".U
+    def jalr = "b001".U
+    def auipc = "b010".U
+    def dasicscall_j = "b100".U   // this would split into a dasicscall_j & a csrw
+    def dasicscall_jr = "b101".U  // this would split into a jalr & a csrw
 //    def call = "b11_011".U
 //    def ret  = "b11_100".U
     def jumpOpisJump(op: UInt) = !op(1)
     def jumpOpisJalr(op: UInt) = op(0)
     def jumpOpisAuipc(op: UInt) = op(1)
+    def jumpOpisDasicscall(op: UInt) = op(2)
+    def jumpOpisDasicscallJ(op: UInt) = op === dasicscall_j
   }
 
   object FenceOpType {
@@ -504,6 +508,7 @@ package object xiangshan {
     def IMM_Z  = "b0101".U
     def INVALID_INSTR = "b0110".U
     def IMM_B6 = "b1000".U
+    def IMM_DIJ = "b1001".U
 
     def X      = BitPat("b????")
 

@@ -45,10 +45,13 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
 
   val isJalr = JumpOpType.jumpOpisJalr(func)
   val isAuipc = JumpOpType.jumpOpisAuipc(func)
+  // Dasicscall.J needs a special case, while Dasicscall.JR is included in Jalr
+  val isDasicscallJ = JumpOpType.jumpOpisDasicscallJ(func)
   val offset = SignExt(ParallelMux(Seq(
     isJalr -> ImmUnion.I.toImm32(immMin),
     isAuipc -> ImmUnion.U.toImm32(immMin),
-    !(isJalr || isAuipc) -> ImmUnion.J.toImm32(immMin)
+    isDasicscallJ -> ImmUnion.DIJ.toImm32(immMin),
+    !(isJalr || isAuipc || isDasicscallJ) -> ImmUnion.J.toImm32(immMin)
   )), XLEN)
 
   val snpc = Mux(isRVC, pc + 2.U, pc + 4.U)

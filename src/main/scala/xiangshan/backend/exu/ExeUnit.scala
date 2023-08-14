@@ -148,38 +148,46 @@ class ExeUnit(config: ExuConfig)(implicit p: Parameters) extends Exu(config) {
 class AluExeUnit(implicit p: Parameters) extends ExeUnit(AluExeUnitCfg)
 
 class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
-    //For JumpCSRExeUnitCfg
-    val csr = functionUnits.collectFirst{
-      case c: CSR => c
-    }.get
-    val csr_mode = csr.csrio.customCtrl.mode
-    val csr_distributed_write = csr.csrio.customCtrl.distribute_csr
+  //For JumpCSRExeUnitCfg
+  val csr = functionUnits.collectFirst{
+    case c: CSR => c
+  }.get
+  val csr_mode = csr.csrio.customCtrl.mode
+  val csr_distributed_write = csr.csrio.customCtrl.distribute_csr
 
-    val jump = functionUnits.collectFirst{
-      case j: Jump => j
-    }.get 
+  val jump = functionUnits.collectFirst{
+    case j: Jump => j
+  }.get
 
-    val (jump_valid, jump_func) = (jump.io.in.valid, jump.io.in.bits.uop.ctrl.fuOpType)
-    val (jump_ins_untrusted, jump_target)  = (jump.io.in.bits.uop.dasicsUntrusted, jump.redirectOut.cfiUpdate.target)
-    val jump_pc = SignExt(jump.io.in.bits.uop.cf.pc, XLEN)
+  val (jump_valid, jump_func) = (jump.io.in.valid, jump.io.in.bits.uop.ctrl.fuOpType)
+  val (jump_ins_untrusted, jump_target)  = (jump.io.in.bits.uop.dasicsUntrusted, jump.redirectOut.cfiUpdate.target)
+  val jump_pc = SignExt(jump.io.in.bits.uop.cf.pc, XLEN)
 
-    //dasics jump modules
-    val dasics = Module(new JumpDasics)
-    dasics.io.distribute_csr := csr_distributed_write
+  // Activate csr module for DASICSCALL instructions
+  when (jump_valid && JumpOpType.jumpOpisDasicscall(jump_func)) {
+    csr.io.in.valid := true.B
+    csr.io.in.bits.src(0) := SignExt(jump.io.in.bits.uop.cf.pc, XLEN) + 4.U // snpc, not RVC
+    csr.io.in.bits.uop.ctrl.imm := csr.DasicsReturnPc.U
+    csr.io.in.bits.uop.ctrl.fuOpType := CSROpType.wrt
+  }
 
-    val dasics_jump_checker = Module(new DasicsJumpChecker)
+  //dasics jump modules
+  val dasics = Module(new JumpDasics)
+  dasics.io.distribute_csr := csr_distributed_write
 
-    dasics_jump_checker.io.req.valid := jump_valid && JumpOpType.jumpOpisJump(jump_func)  //only check jump (jal/jalr) instruction
-    dasics_jump_checker.io.connect( mode = csr_mode, 
-                                    pc = jump_pc, 
-                                    addr = jump_target, 
-                                    inUntrustedZone = jump_ins_untrusted, 
-                                    operation = DasicsOp.jump,
-                                    contro_flow = dasics.io.control_flow)
-  
+  val dasics_jump_checker = Module(new DasicsJumpChecker)
 
-    io.out.bits.uop.cf.exceptionVec(dasicsSIntrAccessFault) := dasics_jump_checker.io.resp.dasics_fault === DasicsCheckFault.SJumpDasicsFault
-    io.out.bits.uop.cf.exceptionVec(dasicsUIntrAccessFault) := dasics_jump_checker.io.resp.dasics_fault === DasicsCheckFault.UJumpDasicsFault
+  dasics_jump_checker.io.req.valid := jump_valid && JumpOpType.jumpOpisJump(jump_func)  //only check jump (jal/jalr) instruction
+  dasics_jump_checker.io.connect( mode = csr_mode,
+                                  pc = jump_pc,
+                                  addr = jump_target,
+                                  inUntrustedZone = jump_ins_untrusted,
+                                  operation = DasicsOp.jump,
+                                  contro_flow = dasics.io.control_flow)
+
+
+  io.out.bits.uop.cf.exceptionVec(dasicsSIntrAccessFault) := dasics_jump_checker.io.resp.dasics_fault === DasicsCheckFault.SJumpDasicsFault
+  io.out.bits.uop.cf.exceptionVec(dasicsUIntrAccessFault) := dasics_jump_checker.io.resp.dasics_fault === DasicsCheckFault.UJumpDasicsFault
 }
 
 class JumpExeUnit(implicit p: Parameters) extends ExeUnit(JumpExeUnitCfg)
