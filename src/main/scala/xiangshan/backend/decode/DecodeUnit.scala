@@ -615,6 +615,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     BDecode.table ++
     CBODecode.table ++
     NDecode.table ++
+    DasicsDecode.table ++
     SvinvalDecode.table
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
   val luiMatch = (t: Seq[BitPat]) => t(3).value == FuType.alu.litValue && t.reverse.head.value == SelImm.IMM_U.litValue
@@ -642,7 +643,8 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   cs.ldest := ctrl_flow.instr(RD_MSB, RD_LSB)
 
   // set RD=ra (0x1) for DasicsCall.J
-  when (cs.selImm === SelImm.IMM_DIJ) {
+  val isDasicsCallJ = cs.fuType === FuType.jmp && cs.fuOpType === JumpOpType.dasicscall_j
+  when (isDasicsCallJ) {
     cs.ldest := 0x1.U((RD_MSB - RD_LSB + 1).W)
   }
 
