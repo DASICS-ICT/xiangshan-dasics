@@ -98,6 +98,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     uop.debugInfo := DontCare
     uop.lqIdx := DontCare
     uop.sqIdx := DontCare
+    uop.jumpTarget := DontCare
   })
 
   val needFpDest = Wire(Vec(RenameWidth, Bool()))
