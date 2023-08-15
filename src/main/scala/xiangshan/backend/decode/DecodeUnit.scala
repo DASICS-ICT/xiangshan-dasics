@@ -388,6 +388,16 @@ object NDecode extends DecodeConstants {
 }
 
 /**
+  * DASICS custom instructions
+  */
+object DasicsDecode extends DecodeConstants {
+  val table: Array[(BitPat, List[BitPat])] = Array(
+    DASICSCALL_J -> List(SrcType.pc, SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_j, Y, N, N, Y, Y, N, SelImm.IMM_DIJ),
+    DASICSCALL_JR-> List(SrcType.reg,SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_jr,Y, N, N, Y, Y, N, SelImm.IMM_I)
+  )
+}
+
+/**
  * FP Divide SquareRoot Constants
  */
 object FDivSqrtDecode extends DecodeConstants {
@@ -532,6 +542,15 @@ case class Imm_B6() extends Imm(6){
   }
 }
 
+/* immediate used in DASICSCALL.J */
+case class Imm_DIJ() extends Imm(22) {
+  override def do_toImm32(minBits: UInt): UInt = SignExt(Cat(minBits, 0.U(1.W)), 32)
+
+  override def minBitsFromInstr(instr: UInt): UInt = {
+    Cat(instr(31), instr(7), instr(20, 15), instr(11, 8), instr(30, 21))
+  }
+}
+
 object ImmUnion {
   val I = Imm_I()
   val S = Imm_S()
@@ -540,7 +559,8 @@ object ImmUnion {
   val J = Imm_J()
   val Z = Imm_Z()
   val B6 = Imm_B6()
-  val imms = Seq(I, S, B, U, J, Z, B6)
+  val DIJ = Imm_DIJ()
+  val imms = Seq(I, S, B, U, J, Z, B6, DIJ)
   val maxLen = imms.maxBy(_.len).len
   val immSelMap = Seq(
     SelImm.IMM_I,
@@ -549,7 +569,8 @@ object ImmUnion {
     SelImm.IMM_U,
     SelImm.IMM_UJ,
     SelImm.IMM_Z,
-    SelImm.IMM_B6
+    SelImm.IMM_B6,
+    SelImm.IMM_DIJ
   ).zip(imms)
   println(s"ImmUnion max len: $maxLen")
 }
@@ -594,6 +615,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     BDecode.table ++
     CBODecode.table ++
     NDecode.table ++
+    DasicsDecode.table ++
     SvinvalDecode.table
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
   val luiMatch = (t: Seq[BitPat]) => t(3).value == FuType.alu.litValue && t.reverse.head.value == SelImm.IMM_U.litValue
@@ -619,6 +641,12 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   cs.lsrc(2) := ctrl_flow.instr(RS3_MSB, RS3_LSB)
   // read dest location
   cs.ldest := ctrl_flow.instr(RD_MSB, RD_LSB)
+
+  // set RD=ra (0x1) for DasicsCall.J
+  val isDasicsCallJ = cs.fuType === FuType.jmp && cs.fuOpType === JumpOpType.dasicscall_j
+  when (isDasicsCallJ) {
+    cs.ldest := 0x1.U((RD_MSB - RD_LSB + 1).W)
+  }
 
   // fill in exception vector
   cf_ctrl.cf.exceptionVec := io.enq.ctrl_flow.exceptionVec
