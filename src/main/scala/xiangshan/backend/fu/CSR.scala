@@ -120,11 +120,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   cfOut := cfIn
   val flushPipe = Wire(Bool())
 
-  val (valid, src1, src2, func) = (
+  val (valid, src1, src2, func, isUntrusted) = (
     io.in.valid,
     io.in.bits.src(0),
     io.in.bits.uop.ctrl.imm,
-    io.in.bits.uop.ctrl.fuOpType
+    io.in.bits.uop.ctrl.fuOpType,
+    io.in.bits.uop.dasicsUntrusted
   )
 
   // CSR define
@@ -750,6 +751,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
+  val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
+    (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
+    (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneRetrunPC.U) || 
+    (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
+    (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
+    addr === DasicsLibCfgBase.U
+
   // satp wen check
   val satpLegalMode = (wdata.asTypeOf(new SatpStruct).mode===0.U) || (wdata.asTypeOf(new SatpStruct).mode===8.U)
 
@@ -870,6 +878,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val isIllegalAddr = valid && CSROpType.needAccess(func) && MaskedRegMap.isIllegalAddr(mapping, addr)
   val isIllegalAccess = wen && !permitted
   val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI
+  val isIllegalDasicsAccess = valid && CSROpType.needAccess(func) && addrInDasics && isUntrusted
 
   // expose several csr bits for tlb
   tlbBundle.priv.mxr   := mstatusStruct.mxr.asBool
@@ -968,7 +977,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
   // * csr access is illegal
-  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp
+  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp || isIllegalDasicsAccess
   cfOut.exceptionVec := csrExceptionVec
 
   XSDebug(io.in.valid, s"Debug Mode: an Ebreak is executed, ebreak cause enter-debug-mode exception ? ${raiseDebugException}\n")
