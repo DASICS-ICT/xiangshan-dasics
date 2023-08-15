@@ -98,6 +98,7 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   io.in.ready := io.out.ready
   io.out.valid := valid
   io.out.bits.uop <> io.in.bits.uop
+  io.out.bits.uop.jumpTarget := jumpDataModule.io.target
   io.out.bits.data := jumpDataModule.io.result
 
 
