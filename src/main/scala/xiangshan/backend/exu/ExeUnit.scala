@@ -167,8 +167,11 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
   when (jump_valid && JumpOpType.jumpOpisDasicscall(jump_func)) {
     csr.io.in.valid := true.B
     csr.io.in.bits.src(0) := SignExt(jump.io.in.bits.uop.cf.pc, XLEN) + 4.U // snpc, not RVC
+    // Write DasicsReturnPC
     csr.io.in.bits.uop.ctrl.imm := csr.DasicsReturnPc.U
     csr.io.in.bits.uop.ctrl.fuOpType := CSROpType.wrt
+    // Receive illegal instruction exception from CSR
+    io.out.bits.uop.cf.exceptionVec(illegalInstr) := csr.io.out.bits.uop.cf.exceptionVec(illegalInstr)
   }
 
   //dasics jump modules
