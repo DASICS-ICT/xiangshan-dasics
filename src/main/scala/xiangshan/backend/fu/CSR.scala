@@ -774,7 +774,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, priviledgeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
-  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted
+  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInDasics && isUntrusted)
+  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
   io.out.bits.data := rdata
@@ -880,7 +881,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val isIllegalAddr = valid && CSROpType.needAccess(func) && MaskedRegMap.isIllegalAddr(mapping, addr)
   val isIllegalAccess = wen && !permitted
   val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI
-  val isIllegalDasicsAccess = valid && CSROpType.needAccess(func) && addrInDasics && isUntrusted
 
   // expose several csr bits for tlb
   tlbBundle.priv.mxr   := mstatusStruct.mxr.asBool
@@ -979,7 +979,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
   // * csr access is illegal
-  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp || isIllegalDasicsAccess
+  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp
   cfOut.exceptionVec := csrExceptionVec
 
   XSDebug(io.in.valid, s"Debug Mode: an Ebreak is executed, ebreak cause enter-debug-mode exception ? ${raiseDebugException}\n")
