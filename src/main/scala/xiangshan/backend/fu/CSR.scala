@@ -859,7 +859,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val isUret   = addr === privUret   && func === CSROpType.jmp
   val isDret   = addr === privDret   && func === CSROpType.jmp
   val isWFI    = func === CSROpType.wfi
-
+  
   XSDebug(wen, "csr write: pc %x addr %x rdata %x wdata %x func %x\n", cfIn.pc, addr, rdata, wdata, func)
   XSDebug(wen, "pc %x mstatus %x mideleg %x medeleg %x mode %x\n", cfIn.pc, mstatus, mideleg , medeleg, priviledgeMode)
 
@@ -972,8 +972,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val csrExceptionVec = WireInit(cfIn.exceptionVec)
   csrExceptionVec(breakPoint) := io.in.valid && isEbreak
   csrExceptionVec(ecallM) := priviledgeMode === ModeM && io.in.valid && isEcall
-  csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall
-  csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall
+  csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall && !isUntrusted
+  csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall && !isUntrusted
+
+  csrExceptionVec(dasicsUEcallAccessFault) := priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted
+  csrExceptionVec(dasicsSEcallAccessFault) := priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted
+
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
   // * csr access is illegal
