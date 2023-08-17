@@ -333,7 +333,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // DASICS Mapping
   val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsSMainCfgMask: UInt = "hf".U(XLEN.W)
+  val dasicsSMainCfgMask: UInt = "h3".U(XLEN.W)
   val dasicsUMainCfgMask: UInt = "h2".U(XLEN.W)
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
@@ -1339,6 +1339,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.dumbound1 := dasicsUMainBoundHi
     difftest.io.dmaincall := dasicsMainCall
     difftest.io.dretpc := dasicsReturnPc
+    difftest.io.dretpcfz := dasicsAZoneReturnPc
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {
