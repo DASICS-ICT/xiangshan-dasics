@@ -333,6 +333,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // DASICS Mapping
   val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsSMainCfgMask: UInt = "hf".U(XLEN.W)
+  val dasicsUMainCfgMask: UInt = "h2".U(XLEN.W)
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
 
@@ -346,15 +348,15 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   ) ++ dasicsGenJumpMapping(
     jump_init = dasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasics_jump
   ) ++ Map(
-    MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = "h2".U(XLEN.W), rmask = "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = dasicsUMainCfgMask, rmask = dasicsUMainCfgMask),
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
     MaskedRegMap(DasicsMainCall, dasicsMainCall),
     MaskedRegMap(DasicsReturnPc, dasicsReturnPc),
-    MaskedRegMap(DasicsActiveZoneRetrunPC, dasicsAZoneReturnPc) 
+    MaskedRegMap(DasicsActiveZoneReturnPC, dasicsAZoneReturnPc)
   )
 
   // Superviser-Level CSRs
@@ -753,7 +755,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
-    (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneRetrunPC.U) || 
+    (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneReturnPC.U) ||
     (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
     (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
     addr === DasicsLibCfgBase.U
@@ -1329,6 +1331,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.sedeleg := sedeleg
     difftest.io.medeleg := medeleg
     difftest.io.sideleg := sideleg
+    difftest.io.dsmcfg := dasicsMainCfg & dasicsSMainCfgMask
+    difftest.io.dsmbound0 := dasicsSMainBoundLo
+    difftest.io.dsmbound1 := dasicsSMainBoundHi
+    difftest.io.dumcfg := dasicsMainCfg & dasicsUMainCfgMask
+    difftest.io.dumbound0 := dasicsUMainBoundLo
+    difftest.io.dumbound1 := dasicsUMainBoundHi
+    difftest.io.dmaincall := dasicsMainCall
+    difftest.io.dretpc := dasicsReturnPc
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {

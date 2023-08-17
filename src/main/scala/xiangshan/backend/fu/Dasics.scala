@@ -320,7 +320,7 @@ class JumpDasics(implicit p: Parameters) extends XSModule
   val control_flow_mapping = Map(
     MaskedRegMap(DasicsMainCall, dasics_main_call),
     MaskedRegMap(DasicsReturnPc, dasics_return_pc),
-    MaskedRegMap(DasicsActiveZoneRetrunPC, dasics_azone_return_pc),
+    MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
     MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "hf".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
