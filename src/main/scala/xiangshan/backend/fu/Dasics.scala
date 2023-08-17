@@ -321,7 +321,7 @@ class JumpDasics(implicit p: Parameters) extends XSModule
     MaskedRegMap(DasicsMainCall, dasics_main_call),
     MaskedRegMap(DasicsReturnPc, dasics_return_pc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
-    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
     MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h2".U(XLEN.W)),
@@ -549,7 +549,7 @@ class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
 
   val w = io.distribute_csr.w
   val mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = Map(
-    MaskedRegMap(DasicsSMainCfg, mainCfgReg, "hf".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, mainCfgReg, "h3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
     MaskedRegMap(DasicsUMainCfg, mainCfgReg, "h2".U(XLEN.W)),
