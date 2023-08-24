@@ -43,6 +43,7 @@ case class XSCoreParameters
   HasPrefetch: Boolean = false,
   HartId: Int = 0,
   XLEN: Int = 64,
+  Exceptions: Int = 20,
   HasMExtension: Boolean = true,
   HasCExtension: Boolean = true,
   HasDiv: Boolean = true,
@@ -281,6 +282,7 @@ trait HasXSParameter {
   val fLen = 64
   def xLen = XLEN
 
+  val Exceptions = coreParams.Exceptions  // Length of exceptionVec
   val HasMExtension = coreParams.HasMExtension
   val HasCExtension = coreParams.HasCExtension
   val HasDiv = coreParams.HasDiv

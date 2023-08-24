@@ -64,6 +64,9 @@ trait HasCSRConst {
   val Hpmcounter30  = 0xC1E
   val Hpmcounter31  = 0xC1F
 
+  // User-Level MPK Register
+  val Upkru         = 0x800
+
   // Supervisor Trap Setup
   val Sstatus       = 0x100
   val Sedeleg       = 0x102
@@ -90,6 +93,10 @@ trait HasCSRConst {
   val Srnctl        = 0x5C4
   val Scachebase    = 0x5C5
   val Sfetchctl     = 0x5C6
+
+  // Supervisor MPK Registers
+  val Spkctl        = 0x9c0
+  val Spkrs         = 0x9c1
 
   /** 0x5C5-0x5E5 for cache instruction register*/
 

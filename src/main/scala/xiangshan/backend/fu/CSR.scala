@@ -362,6 +362,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val sscratch = RegInit(UInt(XLEN.W), 0.U)
   val scounteren = RegInit(UInt(XLEN.W), 0.U)
 
+  // Supervisor-level MPK Registers
+  val spkrs = RegInit(UInt(XLEN.W), 0.U)
+  val spkctl = RegInit(UInt(XLEN.W), 0.U)
+  val spkctlMask = "h3".U(XLEN.W)  // 0: pke, 1: pks
+
   // sbpctl
   // Bits 0-7: {LOOP, RAS, SC, TAGE, BIM, BTB, uBTB}
   val sbpctl = RegInit(UInt(XLEN.W), "h7f".U)
@@ -504,6 +509,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(Fcsr, fcsr, wfn = fcsr_wfn)
   )
 
+  // User-Level MPK Register
+  val upkru = RegInit(UInt(XLEN.W), 0.U)
+
   // Hart Priviledge Mode
   val priviledgeMode = RegInit(UInt(2.W), ModeM)
 
@@ -598,7 +606,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "hb3ff".U(XLEN.W)),
+    MaskedRegMap(Medeleg, medeleg, "hfb3ff".U(XLEN.W)),
     MaskedRegMap(Mideleg, mideleg, "h222".U(XLEN.W)),
     MaskedRegMap(Mie, mie),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
@@ -659,10 +667,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     )
   }}
 
+  val mpkMapping = Map(
+    MaskedRegMap(Upkru, upkru),
+    MaskedRegMap(Spkrs, spkrs),
+    MaskedRegMap(Spkctl, spkctl, spkctlMask),
+  )
+
   val mapping = basicPrivMapping ++
                 perfCntMapping ++
                 pmpMapping ++
                 pmaMapping ++
+                mpkMapping ++
                 (if (HasFPU) fcsrMapping else Nil) ++
                 (if (HasCustomCSRCacheOp) cacheopMapping else Nil)
 
@@ -813,6 +828,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   tlbBundle.priv.sum   := mstatusStruct.sum.asBool
   tlbBundle.priv.imode := priviledgeMode
   tlbBundle.priv.dmode := Mux(debugMode && dcsr.asTypeOf(new DcsrStruct).mprven, ModeM, Mux(mstatusStruct.mprv.asBool, mstatusStruct.mpp, priviledgeMode))
+  tlbBundle.mpk.enable := Mux(priviledgeMode === ModeU, spkctl(0), Mux(priviledgeMode === ModeS, spkctl(1), false.B))
+  tlbBundle.mpk.pkr    := Mux(priviledgeMode === ModeU, upkru, spkrs)
 
   // Branch control
   val retTarget = WireInit(0.U)
@@ -967,6 +984,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasInstrAccessFault   = hasException && exceptionVecFromRob(instrAccessFault)
   val hasLoadAccessFault    = hasException && exceptionVecFromRob(loadAccessFault)
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
+  val hasPKULoadPageFault   = hasException && exceptionVecFromRob(pkuLoadPageFault)
+  val hasPKUStorePageFault  = hasException && exceptionVecFromRob(pkuStorePageFault)
+  val hasPKSLoadPageFault   = hasException && exceptionVecFromRob(pksLoadPageFault)
+  val hasPKSStorePageFault  = hasException && exceptionVecFromRob(pksStorePageFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
@@ -1015,6 +1036,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     hasInstrPageFault,
     hasLoadPageFault,
     hasStorePageFault,
+    hasPKULoadPageFault,
+    hasPKUStorePageFault,
+    hasPKSLoadPageFault,
+    hasPKSStorePageFault,
     hasInstrAccessFault,
     hasLoadAccessFault,
     hasStoreAccessFault,
@@ -1041,7 +1066,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val debugTrapTarget = Mux(!isEbreak && debugMode, 0x38020808.U, 0x38020800.U) // 0x808 is when an exception occurs in debug mode prog buf exec
   val deleg = Mux(hasIntr, mideleg , medeleg)
   // val delegS = ((deleg & (1 << (causeNO & 0xf))) != 0) && (priviledgeMode < ModeM);
-  val delegS = deleg(causeNO(3,0)) && (priviledgeMode < ModeM)
+  val delegS = deleg(causeNO(4,0)) && (priviledgeMode < ModeM)
   val clearTval = !updateTval || hasIntr
 
   // ctrl block will use theses later for flush
@@ -1203,6 +1228,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.sscratch := sscratch
     difftest.io.mideleg := mideleg
     difftest.io.medeleg := medeleg
+    difftest.io.upkru := upkru
+    difftest.io.spkrs := spkrs
+    difftest.io.spkctl := spkctl
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {

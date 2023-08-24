@@ -149,7 +149,7 @@ package object xiangshan {
   }
 
   object ExceptionVec {
-    def apply() = Vec(16, Bool())
+    def apply() = Vec(20, Bool())
   }
 
   object PMAMode {
@@ -524,6 +524,10 @@ package object xiangshan {
     def loadPageFault       = 13
     // def singleStep          = 14
     def storePageFault      = 15
+    def pkuLoadPageFault    = 16
+    def pkuStorePageFault   = 17
+    def pksLoadPageFault    = 18
+    def pksStorePageFault   = 19
     def priorities = Seq(
       breakPoint, // TODO: different BP has different priority
       instrPageFault,
@@ -536,7 +540,11 @@ package object xiangshan {
       storePageFault,
       loadPageFault,
       storeAccessFault,
-      loadAccessFault
+      loadAccessFault,
+      pksLoadPageFault,
+      pksStorePageFault,
+      pkuLoadPageFault,
+      pkuStorePageFault
     )
     def all = priorities.distinct.sorted
     def frontendSet = Seq(
@@ -734,7 +742,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.loadCanAccept(uop.ctrl.fuType),
     FuType.ldu, 1, 0, writeIntRf = true, writeFpRf = true,
     latency = UncertainLatency(),
-    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault),
+    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault, pkuLoadPageFault, pksLoadPageFault),
     flushPipe = true,
     replayInst = true,
     hasLoadError = true,
@@ -747,7 +755,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.storeCanAccept(uop.ctrl.fuType),
     FuType.stu, 1, 0, writeIntRf = false, writeFpRf = false,
     latency = UncertainLatency(),
-    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault),
+    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault, pkuStorePageFault, pksStorePageFault),
     trigger = true,
   )
 
