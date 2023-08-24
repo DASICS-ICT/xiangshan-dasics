@@ -582,7 +582,8 @@ case class Imm_LUI_LOAD() {
   }
   def getLuiImm(uop: MicroOp): UInt = {
     val loadImmLen = Imm_I().len
-    val imm_u = Cat(uop.psrc(1), uop.psrc(0), uop.ctrl.imm(ImmUnion.maxLen - 1, loadImmLen))
+    //val imm_u = Cat(uop.psrc(1), uop.psrc(0), uop.ctrl.imm(ImmUnion.maxLen - 1, loadImmLen))
+    val imm_u = Cat(uop.psrc(1), uop.psrc(0), uop.ctrl.imm(ImmUnion.U.len - 1, loadImmLen))
     Imm_U().do_toImm32(imm_u)
   }
 }
