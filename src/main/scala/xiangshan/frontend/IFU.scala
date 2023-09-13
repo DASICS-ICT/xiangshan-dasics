@@ -57,8 +57,12 @@ class UncacheInterface(implicit p: Parameters) extends XSBundle {
 }
 
 class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
+  // tagger: stage 1
   val startAddr: UInt = Output(UInt(VAddrBits.W))
   val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
+  // branch checker: stage 3
+  val brTarget: UInt = Output(UInt(VAddrBits.W))
+  val brNeedTrust: Bool = Input(Bool())
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
@@ -96,6 +100,7 @@ class IfuToPredChecker(implicit p: Parameters) extends XSBundle {
   val jumpOffset    = Vec(PredictWidth, UInt(XLEN.W))
   val target        = UInt(VAddrBits.W)
   val instrRange    = Vec(PredictWidth, Bool())
+  val takenOH       = UInt(PredictWidth.W)
   val instrValid    = Vec(PredictWidth, Bool())
   val pds           = Vec(PredictWidth, new PreDecodeInfo)
   val pc            = Vec(PredictWidth, UInt(VAddrBits.W))
@@ -280,6 +285,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f2_jump_range = Fill(PredictWidth, !f2_ftq_req.ftqOffset.valid) | Fill(PredictWidth, 1.U(1.W)) >> ~f2_ftq_req.ftqOffset.bits
   val f2_ftr_range  = Fill(PredictWidth,  f2_ftq_req.ftqOffset.valid) | Fill(PredictWidth, 1.U(1.W)) >> ~getBasicBlockIdx(f2_ftq_req.nextStartAddr, f2_ftq_req.startAddr)
   val f2_instr_range = f2_jump_range & f2_ftr_range
+  val f2_last_OH = f2_instr_range & Cat(1.U(1.W), ~f2_instr_range(PredictWidth - 1, 1)) // OH code for last instr
   val f2_pf_vec = VecInit((0 until PredictWidth).map(i => (!isNextLine(f2_pc(i), f2_ftq_req.startAddr) && f2_except_pf(0)   ||  isNextLine(f2_pc(i), f2_ftq_req.startAddr) && f2_doubleLine &&  f2_except_pf(1))))
   val f2_af_vec = VecInit((0 until PredictWidth).map(i => (!isNextLine(f2_pc(i), f2_ftq_req.startAddr) && f2_except_af(0)   ||  isNextLine(f2_pc(i), f2_ftq_req.startAddr) && f2_doubleLine && f2_except_af(1))))
 
@@ -384,6 +390,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f3_pc             = RegEnable(next = f2_pc,          enable = f2_fire)
   val f3_half_snpc        = RegEnable(next = f2_half_snpc, enable = f2_fire)
   val f3_instr_range    = RegEnable(next = f2_instr_range, enable = f2_fire)
+  val f3_last_OH        = RegEnable(next = f2_last_OH,     enable = f2_fire)
   val f3_foldpc         = RegEnable(next = f2_foldpc,      enable = f2_fire)
   val f3_crossPageFault = RegEnable(next = f2_crossPageFault,      enable = f2_fire)
   val f3_hasHalfValid   = RegEnable(next = f2_hasHalfValid,      enable = f2_fire)
@@ -562,6 +569,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   checkerIn.jumpOffset  := f3_jump_offset
   checkerIn.target      := f3_ftq_req.nextStartAddr
   checkerIn.instrRange  := f3_instr_range.asTypeOf(Vec(PredictWidth, Bool()))
+  checkerIn.takenOH     := f3_last_OH
   checkerIn.instrValid  := f3_instr_valid.asTypeOf(Vec(PredictWidth, Bool()))
   checkerIn.pds         := f3_pd
   checkerIn.pc          := f3_pc
@@ -595,6 +603,11 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   f3_instr_valid := Mux(f3_lastHalf.valid,f3_hasHalfValid ,VecInit(f3_pd.map(inst => inst.valid)))
 
+  // DASICS branch check
+  io.dasics.brTarget := checkerOutStage1.brTarget
+  val fixedRange: UInt = checkerOutStage1.fixedRange.asUInt
+  private val fixedLastOH = fixedRange & Cat(1.U(1.W), fixedRange(PredictWidth - 1, 1))
+
   /*** frontend Trigger  ***/
   frontendTrigger.io.pds  := f3_pd
   frontendTrigger.io.pc   := f3_pc
@@ -620,6 +633,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.crossPageIPFFix := f3_crossPageFault
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
+  io.toIbuffer.bits.dasicsNeedTrust :=
+    Fill(PredictWidth, f3_ftq_req.ftqOffset.valid && io.dasics.brNeedTrust) & fixedLastOH
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask

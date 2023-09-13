@@ -30,6 +30,7 @@ class IbufPtr(implicit p: Parameters) extends CircularQueuePtr[IbufPtr](
 
 class IBufferIO(implicit p: Parameters) extends XSBundle {
   val flush = Input(Bool())
+  val modeU = Input(Bool()) // for DASICS
   val in = Flipped(DecoupledIO(new FetchToIBuffer))
   val out = Vec(DecodeWidth, DecoupledIO(new CtrlFlow))
   val full = Output(Bool())
@@ -48,8 +49,10 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Bool()
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
+  val dasicsIllegalBranchS = Bool()
+  val dasicsIllegalBranchU = Bool()
 
-  def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
+  def fromFetch(fetch: FetchToIBuffer, i: Int, modeU: Bool): IBufEntry = {
     inst   := fetch.instrs(i)
     pc     := fetch.pc(i)
     foldpc := fetch.foldpc(i)
@@ -62,6 +65,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     crossPageIPFFix := fetch.crossPageIPFFix(i)
     triggered := fetch.triggered(i)
     dasicsUntrusted := fetch.dasicsUntrusted(i)
+    dasicsIllegalBranchS := fetch.dasicsUntrusted(i) && fetch.dasicsNeedTrust(i) && !modeU
+    dasicsIllegalBranchU := fetch.dasicsUntrusted(i) && fetch.dasicsNeedTrust(i) && modeU
     this
   }
 
@@ -85,6 +90,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
+    cf.dasicsIllegalBranchS := dasicsIllegalBranchS
+    cf.dasicsIllegalBranchU := dasicsIllegalBranchU
     cf
   }
 }
@@ -118,7 +125,7 @@ class Ibuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrH
   io.in.ready := allowEnq
 
   val enqOffset = Seq.tabulate(PredictWidth)(i => PopCount(io.in.bits.valid.asBools.take(i)))
-  val enqData = Seq.tabulate(PredictWidth)(i => Wire(new IBufEntry).fromFetch(io.in.bits, i))
+  val enqData = Seq.tabulate(PredictWidth)(i => Wire(new IBufEntry).fromFetch(io.in.bits, i, io.modeU))
   for (i <- 0 until PredictWidth) {
     ibuf.io.waddr(i) := enqPtrVec(enqOffset(i)).value
     ibuf.io.wdata(i) := enqData(i)

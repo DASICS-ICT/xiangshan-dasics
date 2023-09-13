@@ -145,7 +145,15 @@ class ExeUnit(config: ExuConfig)(implicit p: Parameters) extends Exu(config) {
 
 }
 
-class AluExeUnit(implicit p: Parameters) extends ExeUnit(AluExeUnitCfg)
+class AluExeUnit(implicit p: Parameters) extends ExeUnit(AluExeUnitCfg) {
+  val alu: Alu = functionUnits.collectFirst { case a: Alu => a }.get
+
+  // if DASICS illegal branch is indeed taken, trigger exception
+  val uopIn: MicroOp = alu.io.in.bits.uop
+  private val branchTaken = alu.redirectOutValid && alu.redirectOut.cfiUpdate.taken
+  io.out.bits.uop.cf.exceptionVec(dasicsSIntrAccessFault) := branchTaken && uopIn.dasicsIllegalBranchS
+  io.out.bits.uop.cf.exceptionVec(dasicsUIntrAccessFault) := branchTaken && uopIn.dasicsIllegalBranchU
+}
 
 class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
   //For JumpCSRExeUnitCfg

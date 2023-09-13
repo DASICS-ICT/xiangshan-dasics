@@ -129,6 +129,9 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle {
   val ftqOffset = UInt(log2Up(PredictWidth).W)
   // needs to be checked by dasics
   val dasicsUntrusted = Bool()
+  // if ALU confirms taken, then throw DASICS exception
+  val dasicsIllegalBranchS = Bool()
+  val dasicsIllegalBranchU = Bool()
 }
 
 
@@ -230,6 +233,8 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
+  val dasicsIllegalBranchS = Bool()
+  val dasicsIllegalBranchU = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B

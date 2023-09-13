@@ -21,7 +21,8 @@ import chisel3.util._
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
-import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger}
+import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger, DasicsBranchTagger}
+import xiangshan.backend.fu.util.CSRConst
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 
@@ -102,6 +103,12 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsTagger.io.addr := ifu.io.dasics.startAddr
   ifu.io.dasics.notTrusted := dasicsTagger.io.notTrusted
 
+  // dasicsBranchTagger: tag possible illegal branch instructions
+  val dasicsBrTagger: DasicsBranchTagger = Module(new DasicsBranchTagger())
+  dasicsBrTagger.io.distribute_csr := csrCtrl.distribute_csr
+  dasicsBrTagger.io.target := ifu.io.dasics.brTarget
+  ifu.io.dasics.brNeedTrust := dasicsBrTagger.io.needTrust
+
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))
   // tlb_req_arb.io.in(0) <> ifu.io.iTLBInter.req
   // tlb_req_arb.io.in(1) <> icache.io.itlb(1).req
@@ -162,6 +169,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
 
   //IFU-Ibuffer
   ifu.io.toIbuffer    <> ibuffer.io.in
+  ibuffer.io.modeU := tlbCsr.priv.imode === CSRConst.ModeU
 
   ftq.io.fromBackend <> io.backend.toFtq
   io.backend.fromFtq <> ftq.io.toBackend

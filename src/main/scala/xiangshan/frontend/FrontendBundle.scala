@@ -122,6 +122,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Vec(PredictWidth, Bool())
   val triggered    = Vec(PredictWidth, new TriggerCf)
   val dasicsUntrusted = Vec(PredictWidth, Bool())
+  val dasicsNeedTrust = Vec(PredictWidth, Bool()) // a taken branch with an illegal target if untrusted
 }
 
 // class BitWiseUInt(val width: Int, val init: UInt) extends Module {
