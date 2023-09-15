@@ -178,7 +178,7 @@ class ExceptionGen(implicit p: Parameters) extends XSModule with HasCircularQueu
     val redirect = Input(Valid(new Redirect))
     val flush = Input(Bool())
     val enq = Vec(RenameWidth, Flipped(ValidIO(new RobExceptionInfo)))
-    val wb = Vec(5, Flipped(ValidIO(new RobExceptionInfo)))
+    val wb = Vec(5 + exuParameters.AluCnt, Flipped(ValidIO(new RobExceptionInfo)))
     val out = ValidIO(new RobExceptionInfo)
     val state = ValidIO(new RobExceptionInfo)
   })
@@ -191,19 +191,45 @@ class ExceptionGen(implicit p: Parameters) extends XSModule with HasCircularQueu
   val in_enq_valid = VecInit(io.enq.map(e => e.valid && e.bits.has_exception && !lastCycleFlush))
   val in_wb_valid = io.wb.map(w => w.valid && w.bits.has_exception && !lastCycleFlush)
 
+  private val aluCnt = exuParameters.AluCnt
+  private def getOlder(x: RobExceptionInfo, y: RobExceptionInfo, xv: Bool, yv: Bool): RobExceptionInfo =
+    Mux(!yv || xv && isAfter(y.robIdx, x.robIdx), x, y)
+
   // s0: compare wb(1),wb(2) and wb(3),wb(4)
   val wb_valid = in_wb_valid.zip(io.wb.map(_.bits)).map{ case (v, bits) => v && !(bits.robIdx.needFlush(io.redirect) || io.flush) }
-  val csr_wb_bits = io.wb(0).bits
-  val load_wb_bits = Mux(!in_wb_valid(2) || in_wb_valid(1) && isAfter(io.wb(2).bits.robIdx, io.wb(1).bits.robIdx), io.wb(1).bits, io.wb(2).bits)
-  val store_wb_bits = Mux(!in_wb_valid(4) || in_wb_valid(3) && isAfter(io.wb(4).bits.robIdx, io.wb(3).bits.robIdx), io.wb(3).bits, io.wb(4).bits)
-  val s0_out_valid = RegNext(VecInit(Seq(wb_valid(0), wb_valid(1) || wb_valid(2), wb_valid(3) || wb_valid(4))))
-  val s0_out_bits = RegNext(VecInit(Seq(csr_wb_bits, load_wb_bits, store_wb_bits)))
+  val alu2_wb_bits = Wire(Vec(2, new RobExceptionInfo))
+  val alu2_compare_valid = Wire(Vec(2, Bool()))
+  aluCnt match {
+    case 2 =>
+      alu2_wb_bits := io.wb.take(2).map(_.bits)
+      alu2_compare_valid := in_wb_valid.take(2)
+    case 4 =>
+      val cmpIdx = Seq((0, 1), (2, 3))
+      alu2_compare_valid := VecInit(cmpIdx.map { case (x, y) => in_wb_valid(x) || in_wb_valid(y) })
+      alu2_wb_bits :=
+        VecInit(cmpIdx.map { case (x, y) => getOlder(io.wb(x).bits, io.wb(y).bits, in_wb_valid(x), in_wb_valid(y)) })
+    case _ => XSError("DASICS only support 2 or 4 ALUs!\n")
+  }
+  val alu_wb_bits = getOlder(alu2_wb_bits(0), alu2_wb_bits(1), alu2_compare_valid(0), alu2_compare_valid(1))
+  val alu_wb_valid = VecInit(wb_valid.take(aluCnt)).asUInt.orR
+  val csr_wb_bits = io.wb(aluCnt + 0).bits
+  val load_wb_bits =
+    getOlder(io.wb(aluCnt + 1).bits, io.wb(aluCnt + 2).bits, in_wb_valid(aluCnt + 1), in_wb_valid(aluCnt + 2))
+  val store_wb_bits =
+    getOlder(io.wb(aluCnt + 3).bits, io.wb(aluCnt + 4).bits, in_wb_valid(aluCnt + 3), in_wb_valid(aluCnt + 4))
+  val s0_out_valid = RegNext(VecInit(Seq(
+    alu_wb_valid, wb_valid(aluCnt + 0),
+    wb_valid(aluCnt + 1) || wb_valid(aluCnt + 2), wb_valid(aluCnt + 3) || wb_valid(aluCnt + 4)
+  )))
+  val s0_out_bits = RegNext(VecInit(Seq(alu_wb_bits, csr_wb_bits, load_wb_bits, store_wb_bits)))
 
   // s1: compare last four and current flush
   val s1_valid = VecInit(s0_out_valid.zip(s0_out_bits).map{ case (v, b) => v && !(b.robIdx.needFlush(io.redirect) || io.flush) })
   val compare_01_valid = s0_out_valid(0) || s0_out_valid(1)
-  val compare_01_bits = Mux(!s0_out_valid(0) || s0_out_valid(1) && isAfter(s0_out_bits(0).robIdx, s0_out_bits(1).robIdx), s0_out_bits(1), s0_out_bits(0))
-  val compare_bits = Mux(!s0_out_valid(2) || compare_01_valid && isAfter(s0_out_bits(2).robIdx, compare_01_bits.robIdx), compare_01_bits, s0_out_bits(2))
+  val compare_01_bits = getOlder(s0_out_bits(1), s0_out_bits(0), s0_out_valid(1), s0_out_valid(0))
+  val compare_23_valid = s0_out_valid(2) || s0_out_valid(3)
+  val compare_23_bits = getOlder(s0_out_bits(2), s0_out_bits(3), s0_out_valid(2), s0_out_valid(3))
+  val compare_bits = getOlder(compare_01_bits, compare_23_bits, compare_01_valid, compare_23_valid)
   val s1_out_bits = RegNext(compare_bits)
   val s1_out_valid = RegNext(s1_valid.asUInt.orR)
 

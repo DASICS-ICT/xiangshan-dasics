@@ -633,8 +633,9 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.crossPageIPFFix := f3_crossPageFault
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
-  io.toIbuffer.bits.dasicsNeedTrust :=
-    Fill(PredictWidth, f3_ftq_req.ftqOffset.valid && io.dasics.brNeedTrust) & fixedLastOH
+  io.toIbuffer.bits.dasicsNeedTrust.zipWithIndex.foreach {
+    case (a, i) => a := f3_ftq_req.ftqOffset.valid && io.dasics.brNeedTrust && f3_last_OH(i) && fixedLastOH(i)
+  }
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask
