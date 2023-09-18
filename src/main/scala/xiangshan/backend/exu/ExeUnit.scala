@@ -169,7 +169,6 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
 
   val (jump_valid, jump_func) = (jump.io.in.valid, jump.io.in.bits.uop.ctrl.fuOpType)
   val (jump_ins_untrusted, jump_target)  = (jump.io.in.bits.uop.dasicsUntrusted, jump.redirectOut.cfiUpdate.target)
-  val jump_pc = SignExt(jump.io.in.bits.uop.cf.pc, XLEN)
 
   // Activate csr module for DASICSCALL instructions
   when (jump_valid && JumpOpType.jumpOpisDasicscall(jump_func)) {
@@ -190,7 +189,6 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
 
   dasics_jump_checker.io.req.valid := jump_valid && JumpOpType.jumpOpisJump(jump_func)  //only check jump (jal/jalr) instruction
   dasics_jump_checker.io.connect( mode = csr_mode,
-                                  pc = jump_pc,
                                   addr = jump_target,
                                   inUntrustedZone = jump_ins_untrusted,
                                   operation = DasicsOp.jump,

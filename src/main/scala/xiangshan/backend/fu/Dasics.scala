@@ -68,10 +68,8 @@ object DasicsJumpConfig extends DasicsJumpConfig
 
 class DasicsControlFlow(implicit p: Parameters) extends XSBundle {
   val under_check = Flipped(ValidIO(new Bundle () {
-    val mode = UInt(4.W)
-    val pc = UInt(XLEN.W)
     val target = UInt(XLEN.W)
-    val pc_in_trust_zone = Bool() 
+    val pc_in_trust_zone = Bool()
   }))
   
   val check_result = Output(new Bundle () {
@@ -263,15 +261,13 @@ class DasicsMemCheckerIO(implicit p: Parameters) extends XSBundle with DasicsCon
 }
 
 class DasicsJumpCheckerIO(implicit p: Parameters) extends XSBundle with DasicsConst{
-  val pc   = Input(UInt(VAddrBits.W))
   val mode = Input(UInt(4.W))
   val contro_flow = Flipped(new DasicsControlFlow)
   val req = Flipped(Valid(new DasicsReqBundle()))
   val resp = new DasicsRespBundle()
 
   //connect for every dasics request
-  def connect(mode:UInt, pc: UInt, addr:UInt, inUntrustedZone:Bool, operation: UInt, contro_flow: DasicsControlFlow): Unit = {
-    this.pc  := pc
+  def connect(mode:UInt, addr: UInt, inUntrustedZone: Bool, operation: UInt, contro_flow: DasicsControlFlow): Unit = {
     this.mode := mode
     this.req.bits.addr := addr
     this.req.bits.inUntrustedZone := inUntrustedZone
@@ -310,22 +306,11 @@ class JumpDasics(implicit p: Parameters) extends XSModule
   private val dasics_main_call = RegInit(0.U(XLEN.W))
   private val dasics_return_pc = RegInit(0.U(XLEN.W))
   private val dasics_azone_return_pc = RegInit(0.U(XLEN.W))
-  private val dasics_main_cfg = RegInit(0.U(XLEN.W))
-  private val sMainBoundHi = RegInit(0.U(XLEN.W))
-  private val sMainBoundLo = RegInit(0.U(XLEN.W))
-  private val uMainBoundHi = RegInit(0.U(XLEN.W))
-  private val uMainBoundLo = RegInit(0.U(XLEN.W))
 
   val control_flow_mapping = Map(
     MaskedRegMap(DasicsMainCall, dasics_main_call),
     MaskedRegMap(DasicsReturnPc, dasics_return_pc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
-    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
-    MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
-    MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h2".U(XLEN.W)),
-    MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
-    MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
   )
 
   val rdata: UInt = Wire(UInt(XLEN.W))
@@ -334,24 +319,15 @@ class JumpDasics(implicit p: Parameters) extends XSModule
   io.entries := dasics
 
   //dasics jump checker control flow checking
-  val (target, pc, mode) = (io.control_flow.under_check.bits.target, io.control_flow.under_check.bits.pc,io.control_flow.under_check.bits.mode)
-
-  private val mainCfg = Wire(new DasicsMainCfg())
-  mainCfg.gen(dasics_main_cfg)
-  private val boundLo = Mux(mode === ModeU, uMainBoundLo, sMainBoundLo)
-  private val boundHi = Mux(mode === ModeU, uMainBoundHi, sMainBoundHi)
+  val target: UInt = io.control_flow.under_check.bits.target
 
   val isTrustedZone = io.control_flow.under_check.valid && io.control_flow.under_check.bits.pc_in_trust_zone
-  val targetInTrustedZone = io.control_flow.under_check.valid && (mode === ModeU && mainCfg.uEnable || mode === ModeS && mainCfg.sEnable) &&
-    dasics_jump_in_bound(addr = target(VAddrBits -1, 0), boundHi = boundHi(VAddrBits -1, 0), boundLo = boundLo(VAddrBits -1, 0))
-  
   val targetInActiveZone  = io.control_flow.under_check.valid && !dasics_jump_check(target, dasics)
-  val isActiveZone        = io.control_flow.under_check.valid && !dasics_jump_check(pc, dasics)
 
-  val legalJumpTarget = isTrustedZone  || 
-                        (!isTrustedZone &&  targetInTrustedZone && (target === dasics_return_pc || target === dasics_main_call)) ||
-                        targetInActiveZone || 
-                        ( isActiveZone && !targetInTrustedZone && !targetInActiveZone && target === dasics_azone_return_pc)
+  val legalJumpTarget = isTrustedZone  ||
+                        (target === dasics_return_pc || target === dasics_main_call) ||
+                        targetInActiveZone ||
+                        (target === dasics_azone_return_pc)
 
   io.control_flow.check_result.control_flow_legal := legalJumpTarget
 
@@ -431,8 +407,6 @@ class DasicsJumpChecker(implicit p: Parameters) extends XSModule
   val dasics_jump_fault = req.valid && !dasics_contro_flow.check_result.control_flow_legal
 
   dasics_contro_flow.under_check.valid := req.valid
-  dasics_contro_flow.under_check.bits.mode := io.mode
-  dasics_contro_flow.under_check.bits.pc   := io.pc
   dasics_contro_flow.under_check.bits.pc_in_trust_zone := !io.req.bits.inUntrustedZone
   dasics_contro_flow.under_check.bits.target := req.bits.addr
 
