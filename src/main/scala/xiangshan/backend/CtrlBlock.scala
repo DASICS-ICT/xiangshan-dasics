@@ -42,6 +42,7 @@ class CtrlToFtqIO(implicit p: Parameters) extends XSBundle {
 class RedirectGenerator(implicit p: Parameters) extends XSModule
   with HasCircularQueuePtrHelper {
   class DasicsIOBundle(implicit p: Parameters) extends XSBundle {
+    val valid: Bool = Output(Bool())
     val untrusted: Bool = Output(Bool())
     val target: UInt = Output(UInt(VAddrBits.W))
     val checkFault: UInt = Input(DasicsCheckFault())
@@ -149,11 +150,12 @@ class RedirectGenerator(implicit p: Parameters) extends XSModule
   io.stage3Redirect.valid := s2_redirect_valid_reg
   io.stage3Redirect.bits := s2_redirect_bits_reg
 
+  io.dasics.valid := s2_redirect_valid_reg && s2_misBrTaken
   io.dasics.untrusted := s2_untrusted
   io.dasics.target := s2_target
 
   private val dasicsFault = io.dasics.checkFault
-  io.stage3Exception.valid := s2_redirect_valid_reg && s2_misBrTaken && dasicsFault =/= DasicsCheckFault.noDasicsFault
+  io.stage3Exception.valid := dasicsFault =/= DasicsCheckFault.noDasicsFault
   io.stage3Exception.bits.robIdx := s2_redirect_bits_reg.robIdx
   io.stage3Exception.bits.exceptionVec := VecInit(Seq.fill(ExceptionVec().length)(false.B))
   io.stage3Exception.bits.exceptionVec(dasicsSIntrAccessFault) := dasicsFault === DasicsCheckFault.SJumpDasicsFault
@@ -334,6 +336,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   val jumpDasics: JumpDasics = Module(new JumpDasics)
   val dasicsBrChecker: DasicsJumpChecker = Module(new DasicsJumpChecker)
   jumpDasics.io.distribute_csr := io.csrCtrl.distribute_csr
+  dasicsBrChecker.io.req.valid := redirectGen.io.dasics.valid
   dasicsBrChecker.io.connect(
     mode = io.csrCtrl.mode, addr = redirectGen.io.dasics.target, inUntrustedZone = redirectGen.io.dasics.untrusted,
     operation = DasicsOp.jump, contro_flow = jumpDasics.io.control_flow
