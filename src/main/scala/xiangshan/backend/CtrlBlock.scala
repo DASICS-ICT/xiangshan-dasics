@@ -24,9 +24,9 @@ import utils._
 import xiangshan._
 import xiangshan.backend.decode.{DecodeStage, FusionDecoder, ImmUnion}
 import xiangshan.backend.dispatch.{Dispatch, Dispatch2Rs, DispatchQueue}
-import xiangshan.backend.fu.PFEvent
+import xiangshan.backend.fu.{PFEvent, JumpDasics, DasicsJumpChecker, DasicsCheckFault, DasicsOp}
 import xiangshan.backend.rename.{Rename, RenameTableWrapper}
-import xiangshan.backend.rob.{Rob, RobCSRIO, RobLsqIO}
+import xiangshan.backend.rob.{Rob, RobCSRIO, RobLsqIO, RobExceptionInfo}
 import xiangshan.frontend.{FtqPtr, FtqRead, Ftq_RF_Components}
 import xiangshan.mem.mdp.{LFST, SSIT, WaitTable}
 import xiangshan.ExceptionNO._
@@ -41,6 +41,11 @@ class CtrlToFtqIO(implicit p: Parameters) extends XSBundle {
 
 class RedirectGenerator(implicit p: Parameters) extends XSModule
   with HasCircularQueuePtrHelper {
+  class DasicsIOBundle(implicit p: Parameters) extends XSBundle {
+    val untrusted: Bool = Output(Bool())
+    val target: UInt = Output(UInt(VAddrBits.W))
+    val checkFault: UInt = Input(DasicsCheckFault())
+  }
 
   class RedirectGeneratorIO(implicit p: Parameters) extends XSBundle {
     def numRedirect = exuParameters.JmpCnt + exuParameters.AluCnt
@@ -53,6 +58,8 @@ class RedirectGenerator(implicit p: Parameters) extends XSModule
     val stage3Redirect = ValidIO(new Redirect)
     val memPredUpdate = Output(new MemPredUpdateReq)
     val memPredPcRead = new FtqRead(UInt(VAddrBits.W)) // read req send form stage 2
+    val dasics = new DasicsIOBundle // dasics branch check at stage 2
+    val stage3Exception = ValidIO(new RobExceptionInfo) // dasics branch fault
   }
   val io = IO(new RedirectGeneratorIO)
   /*
@@ -104,6 +111,7 @@ class RedirectGenerator(implicit p: Parameters) extends XSModule
   val s1_redirect_bits_reg = RegNext(oldestRedirect.bits)
   val s1_redirect_valid_reg = RegNext(oldestValid)
   val s1_redirect_onehot = RegNext(oldestOneHot)
+  val s1_untrusted = RegNext(oldestExuOutput.bits.uop.dasicsUntrusted)
 
   // stage1 -> stage2
   io.stage2Redirect.valid := s1_redirect_valid_reg && !io.flush
@@ -121,6 +129,7 @@ class RedirectGenerator(implicit p: Parameters) extends XSModule
       snpc
     )
   )
+  val misBrTaken = !s1_isReplay && s1_redirect_bits_reg.cfiUpdate.taken && !s1_isJump // a mispredicted branch taken
 
   val stage2CfiUpdate = io.stage2Redirect.bits.cfiUpdate
   stage2CfiUpdate.pc := real_pc
@@ -134,9 +143,26 @@ class RedirectGenerator(implicit p: Parameters) extends XSModule
   val s2_pc = RegEnable(real_pc, enable = s1_redirect_valid_reg)
   val s2_redirect_bits_reg = RegEnable(s1_redirect_bits_reg, enable = s1_redirect_valid_reg)
   val s2_redirect_valid_reg = RegNext(s1_redirect_valid_reg && !io.flush, init = false.B)
+  val s2_untrusted = RegEnable(s1_untrusted, enable = s1_redirect_valid_reg)
+  val s2_misBrTaken = RegEnable(misBrTaken, enable = s1_redirect_valid_reg)
 
   io.stage3Redirect.valid := s2_redirect_valid_reg
   io.stage3Redirect.bits := s2_redirect_bits_reg
+
+  io.dasics.untrusted := s2_untrusted
+  io.dasics.target := s2_target
+
+  private val dasicsFault = io.dasics.checkFault
+  io.stage3Exception.valid := s2_redirect_valid_reg && s2_misBrTaken && dasicsFault =/= DasicsCheckFault.noDasicsFault
+  io.stage3Exception.bits.robIdx := s2_redirect_bits_reg.robIdx
+  io.stage3Exception.bits.exceptionVec := VecInit(Seq.fill(ExceptionVec().length)(false.B))
+  io.stage3Exception.bits.exceptionVec(dasicsSIntrAccessFault) := dasicsFault === DasicsCheckFault.SJumpDasicsFault
+  io.stage3Exception.bits.exceptionVec(dasicsUIntrAccessFault) := dasicsFault === DasicsCheckFault.UJumpDasicsFault
+  io.stage3Exception.bits.flushPipe := false.B
+  io.stage3Exception.bits.replayInst := false.B
+  io.stage3Exception.bits.singleStep := false.B
+  io.stage3Exception.bits.crossPageIPFFix := false.B
+  io.stage3Exception.bits.trigger.clear()
 
   // get pc from ftq
   // valid only if redirect is caused by load violation
@@ -303,6 +329,18 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   redirectGen.io.exuMispredict <> exuRedirect
   redirectGen.io.loadReplay <> loadReplay
   redirectGen.io.flush := flushRedirect.valid
+
+  // branch check for mispredicted taken branches
+  val jumpDasics: JumpDasics = Module(new JumpDasics)
+  val dasicsBrChecker: DasicsJumpChecker = Module(new DasicsJumpChecker)
+  jumpDasics.io.distribute_csr := io.csrCtrl.distribute_csr
+  dasicsBrChecker.io.connect(
+    mode = io.csrCtrl.mode, addr = redirectGen.io.dasics.target, inUntrustedZone = redirectGen.io.dasics.untrusted,
+    operation = DasicsOp.jump, contro_flow = jumpDasics.io.control_flow
+  )
+  redirectGen.io.dasics.checkFault := dasicsBrChecker.io.resp.dasics_fault
+
+  rob.io.dasicsFault := redirectGen.io.stage3Exception
 
   val frontendFlushValid = DelayN(flushRedirect.valid, 5)
   val frontendFlushBits = RegEnable(flushRedirect.bits, flushRedirect.valid)

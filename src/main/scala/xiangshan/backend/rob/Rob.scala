@@ -179,6 +179,7 @@ class ExceptionGen(implicit p: Parameters) extends XSModule with HasCircularQueu
     val flush = Input(Bool())
     val enq = Vec(RenameWidth, Flipped(ValidIO(new RobExceptionInfo)))
     val wb = Vec(5 + exuParameters.AluCnt, Flipped(ValidIO(new RobExceptionInfo)))
+    val dasics = Flipped(ValidIO(new RobExceptionInfo)) // dasics branch fault; input at s1 stage
     val out = ValidIO(new RobExceptionInfo)
     val state = ValidIO(new RobExceptionInfo)
   })
@@ -213,25 +214,29 @@ class ExceptionGen(implicit p: Parameters) extends XSModule with HasCircularQueu
   val alu_wb_bits = getOlder(alu2_wb_bits(0), alu2_wb_bits(1), alu2_compare_valid(0), alu2_compare_valid(1))
   val alu_wb_valid = VecInit(wb_valid.take(aluCnt)).asUInt.orR
   val csr_wb_bits = io.wb(aluCnt + 0).bits
+  val load_wb_valid = in_wb_valid(aluCnt + 1) || in_wb_valid(aluCnt + 2)
   val load_wb_bits =
     getOlder(io.wb(aluCnt + 1).bits, io.wb(aluCnt + 2).bits, in_wb_valid(aluCnt + 1), in_wb_valid(aluCnt + 2))
+  val store_wb_valid = in_wb_valid(aluCnt + 3) || in_wb_valid(aluCnt + 4)
   val store_wb_bits =
     getOlder(io.wb(aluCnt + 3).bits, io.wb(aluCnt + 4).bits, in_wb_valid(aluCnt + 3), in_wb_valid(aluCnt + 4))
+  val ls_wb_bits = getOlder(load_wb_bits, store_wb_bits, load_wb_valid, store_wb_valid)
   val s0_out_valid = RegNext(VecInit(Seq(
-    alu_wb_valid, wb_valid(aluCnt + 0),
-    wb_valid(aluCnt + 1) || wb_valid(aluCnt + 2), wb_valid(aluCnt + 3) || wb_valid(aluCnt + 4)
+    alu_wb_valid, wb_valid(aluCnt + 0), VecInit(wb_valid.drop(aluCnt + 1)).reduce(_ || _)
   )))
-  val s0_out_bits = RegNext(VecInit(Seq(alu_wb_bits, csr_wb_bits, load_wb_bits, store_wb_bits)))
+  val s0_out_bits = RegNext(VecInit(Seq(alu_wb_bits, csr_wb_bits, ls_wb_bits)))
 
   // s1: compare last four and current flush
   val s1_valid = VecInit(s0_out_valid.zip(s0_out_bits).map{ case (v, b) => v && !(b.robIdx.needFlush(io.redirect) || io.flush) })
   val compare_01_valid = s0_out_valid(0) || s0_out_valid(1)
   val compare_01_bits = getOlder(s0_out_bits(1), s0_out_bits(0), s0_out_valid(1), s0_out_valid(0))
-  val compare_23_valid = s0_out_valid(2) || s0_out_valid(3)
-  val compare_23_bits = getOlder(s0_out_bits(2), s0_out_bits(3), s0_out_valid(2), s0_out_valid(3))
+  val in_dasics_valid = io.dasics.valid && !lastCycleFlush
+  val dasics_valid = in_dasics_valid && !(io.dasics.bits.robIdx.needFlush(io.redirect) || io.flush)
+  val compare_23_valid = s0_out_valid(2) || in_dasics_valid
+  val compare_23_bits = getOlder(s0_out_bits(2), io.dasics.bits, s0_out_valid(2), in_dasics_valid)
   val compare_bits = getOlder(compare_01_bits, compare_23_bits, compare_01_valid, compare_23_valid)
   val s1_out_bits = RegNext(compare_bits)
-  val s1_out_valid = RegNext(s1_valid.asUInt.orR)
+  val s1_out_valid = RegNext(s1_valid.asUInt.orR || dasics_valid)
 
   val enq_valid = RegNext(in_enq_valid.asUInt.orR && !io.redirect.valid && !io.flush)
   val enq_bits = RegNext(ParallelPriorityMux(in_enq_valid, io.enq.map(_.bits)))
@@ -306,6 +311,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val exception = ValidIO(new ExceptionInfo)
     // exu + brq
     val writeback = MixedVec(numWbPorts.map(num => Vec(num, Flipped(ValidIO(new ExuOutput)))))
+    val dasicsFault = Flipped(ValidIO(new RobExceptionInfo))  // dasics branch exception
     val commits = new RobCommitIO
     val lsq = new RobLsqIO
     val robDeqPtr = Output(new RobPtr)
@@ -893,6 +899,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     exceptionGen.io.enq(i).bits.trigger.frontendHit := io.enq.req(i).bits.cf.trigger.frontendHit
     exceptionGen.io.enq(i).bits.trigger.frontendCanFire := io.enq.req(i).bits.cf.trigger.frontendCanFire
   }
+  exceptionGen.io.dasics := io.dasicsFault
 
   println(s"ExceptionGen:")
   val exceptionCases = exceptionPorts.map(_._1.flatMap(_.exceptionOut).distinct.sorted)
