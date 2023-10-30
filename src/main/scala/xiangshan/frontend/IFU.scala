@@ -24,7 +24,7 @@ import xiangshan._
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 import utils._
-import xiangshan.backend.fu.{PMPReqBundle, PMPRespBundle}
+import xiangshan.backend.fu.{PMPReqBundle, PMPRespBundle, DasicsCheckFault}
 
 trait HasInstrMMIOConst extends HasXSParameter with HasIFUConst{
   def mmioBusWidth = 64
@@ -57,8 +57,12 @@ class UncacheInterface(implicit p: Parameters) extends XSBundle {
 }
 
 class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
+  // for tagger
   val startAddr: UInt = Output(UInt(VAddrBits.W))
   val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
+  // for branch checker
+  val lastBranch = ValidIO(UInt(VAddrBits.W))
+  val brResp: UInt = Input(DasicsCheckFault())
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
@@ -211,6 +215,10 @@ class NewIFU(implicit p: Parameters) extends XSModule
   } else {  // not compressed, discard half of the tags
     f1_dasics_tag.zipWithIndex.foreach { case (tag, i) => tag := io.dasics.notTrusted(i * 2) }
   }
+  // for branch checker
+  io.dasics.lastBranch.valid := f1_ftq_req.lastBranch.valid
+  io.dasics.lastBranch.bits := f1_ftq_req.lastBranch.bits
+  val f1_dasics_br_fault: UInt = io.dasics.brResp
 
   /**
     ******************************************************************************
@@ -267,6 +275,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f2_resend_vaddr     = RegEnable(next = f1_ftq_req.startAddr + 2.U, enable = f1_fire)
 
   val f2_dasics_tag       = RegEnable(next = f1_dasics_tag, enable = f1_fire)
+  val f2_dasics_br_fault  = RegEnable(next = f1_dasics_br_fault, enable = f1_fire)
 
   def isNextLine(pc: UInt, startAddr: UInt) = {
     startAddr(blockOffBits) ^ pc(blockOffBits)
@@ -392,6 +401,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f3_pAddrs   = RegEnable(next = f2_paddrs, enable = f2_fire)
   val f3_resend_vaddr   = RegEnable(next = f2_resend_vaddr,      enable = f2_fire)
   val f3_dasics_tag     = RegEnable(next = f2_dasics_tag,  enable = f2_fire)
+  val f3_dasics_br_fault = RegEnable(next = f2_dasics_br_fault, enable = f2_fire)
 
   when(f3_valid && !f3_ftq_req.ftqOffset.valid){
     assert(f3_ftq_req.startAddr + 32.U >= f3_ftq_req.nextStartAddr , "More tha 32 Bytes fetch is not allowed!")
@@ -620,6 +630,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.crossPageIPFFix := f3_crossPageFault
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
+  io.toIbuffer.bits.dasicsBrFault := f3_dasics_br_fault
+  io.toIbuffer.bits.lastBranch := f3_ftq_req.lastBranch.bits
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask
