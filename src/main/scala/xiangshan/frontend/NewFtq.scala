@@ -999,6 +999,9 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
       lastBranchActiveReg := true.B
       lastBranchReg := r.cfiUpdate.pc
     }
+    when (r.interrupt) {
+      lastBranchActiveReg := false.B  // avoid lastBranch to be carried over after XRet
+    }
   }
 
   // only the valid bit is actually needed

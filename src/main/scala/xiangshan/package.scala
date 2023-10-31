@@ -576,7 +576,9 @@ package object xiangshan {
       instrAddrMisaligned,
       instrAccessFault,
       illegalInstr,
-      instrPageFault
+      instrPageFault,
+      dasicsUIntrAccessFault,
+      dasicsSIntrAccessFault
     )
     def dasicsSet = Seq(
       dasicsUIntrAccessFault,
