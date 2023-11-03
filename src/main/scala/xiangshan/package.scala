@@ -662,9 +662,7 @@ package object xiangshan {
     writeIntRf = true,
     writeFpRf = false,
     hasRedirect = true,
-    exceptionOut = Seq(dasicsUIntrAccessFault, dasicsSIntrAccessFault)
   )
-
 
   val fenceCfg = FuConfig(
     name = "fence",
