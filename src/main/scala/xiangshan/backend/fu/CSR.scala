@@ -1112,7 +1112,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // mtval write logic
   // Due to timing reasons of memExceptionVAddr, we delay the write of mtval and stval
   val memExceptionAddr   =  SignExt(csrio.memExceptionVAddr, XLEN)
-  val jumpExceptionAddr  =  csrio.exception.bits.uop.jumpTarget
 
   val updateTval = VecInit(Seq(
     hasInstrPageFault,
@@ -1132,20 +1131,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
     val tval = Mux(
-      RegNext(RegNext(hasInstrPageFault || hasInstrAccessFault)),
-      RegNext(RegNext(Mux(
-        csrio.exception.bits.uop.cf.crossPageIPFFix,
-        SignExt(csrio.exception.bits.uop.cf.pc + 2.U, XLEN),
-        iexceptionPC
-      ))),
+      RegNext(RegNext((hasDasicsUFetchFault || hasDasicsSFetchFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
+      // for dasics fetch faults, epc is the last branch, tval is this instr
+      RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
       Mux(
-        RegNext(RegNext(hasDasicsUFetchFault || hasDasicsSFetchFault)),
-        Mux(
-          RegNext(RegNext(csrio.exception.bits.uop.cf.lastBranch.valid)),
-          // for branch faults, epc is the last branch, tval is this instr
-          RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
-          RegNext(RegNext(jumpExceptionAddr))
-        ),
+        RegNext(RegNext(hasInstrPageFault || hasInstrAccessFault)),
+        RegNext(RegNext(Mux(
+          csrio.exception.bits.uop.cf.crossPageIPFFix,
+          SignExt(csrio.exception.bits.uop.cf.pc + 2.U, XLEN),
+          iexceptionPC
+        ))),
         memExceptionAddr
       )
     )
@@ -1227,7 +1222,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       ucause := causeNO
       // for branch faults, epc is the last branch
       uepc := Mux(
-        hasInstrPageFault || hasInstrAccessFault, iexceptionPC, Mux(hasDasicsBrFault, lastBranchInfo.bits, dexceptionPC)
+        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.pie.u := mstatusOld.ie.u
       mstatusNew.ie.u := false.B
@@ -1236,7 +1231,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
       sepc := Mux(
-        hasInstrPageFault || hasInstrAccessFault, iexceptionPC, Mux(hasDasicsBrFault, lastBranchInfo.bits, dexceptionPC)
+        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.spp := priviledgeMode
       mstatusNew.pie.s := mstatusOld.ie.s
@@ -1246,7 +1241,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     }.otherwise {
       mcause := causeNO
       mepc := Mux(
-        hasInstrPageFault || hasInstrAccessFault, iexceptionPC, Mux(hasDasicsBrFault, lastBranchInfo.bits, dexceptionPC)
+        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.mpp := priviledgeMode
       mstatusNew.pie.m := mstatusOld.ie.m
