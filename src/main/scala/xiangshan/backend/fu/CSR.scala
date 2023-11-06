@@ -1065,6 +1065,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasDasicsSStoreFault  = hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
   val hasDasicsUFetchFault  = hasException && exceptionVecFromRob(dasicsUIntrAccessFault)
   val hasDasicsSFetchFault  = hasException && exceptionVecFromRob(dasicsSIntrAccessFault)
+  // interrupt and dasics fetch both occurs
+  val hasDasicsFetchIntr    =
+    hasIntr && (exceptionVecFromRob(dasicsUIntrAccessFault) || exceptionVecFromRob(dasicsSIntrAccessFault))
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
   val triggerFrontendHitVec = csrio.exception.bits.uop.cf.trigger.frontendHit
@@ -1197,6 +1200,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     val debugModeNew = WireInit(debugMode)
     val lastBranchInfo = WireInit(csrio.exception.bits.uop.cf.lastBranch)
     val hasDasicsBrFault = (hasDasicsUFetchFault || hasDasicsSFetchFault) && lastBranchInfo.valid
+    val hasDasicsBrIntr = hasDasicsFetchIntr && lastBranchInfo.valid
     when (hasDebugTrap && !debugMode) {
       import DcsrStruct._
       debugModeNew := true.B
@@ -1220,9 +1224,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       //do nothing
     }.elsewhen (delegS && delegU) {
       ucause := causeNO
-      // for branch faults, epc is the last branch
+      // for branch faults, epc is the last branch; if interrupt occurs at the same time, also rewind
       uepc := Mux(
-        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.pie.u := mstatusOld.ie.u
       mstatusNew.ie.u := false.B
@@ -1231,7 +1237,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
       sepc := Mux(
-        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.spp := priviledgeMode
       mstatusNew.pie.s := mstatusOld.ie.s
@@ -1241,7 +1249,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     }.otherwise {
       mcause := causeNO
       mepc := Mux(
-        hasDasicsBrFault, lastBranchInfo.bits, Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.mpp := priviledgeMode
       mstatusNew.pie.m := mstatusOld.ie.m
