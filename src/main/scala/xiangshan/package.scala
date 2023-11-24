@@ -549,6 +549,9 @@ package object xiangshan {
     def dasicsSEcallAccessFault = 31 - dasicsExcOffset
 
     def priorities = Seq(
+      // DASICS Instruction fault actually belongs to the last branch instr
+      dasicsUIntrAccessFault,
+      dasicsSIntrAccessFault,
       breakPoint, // TODO: different BP has different priority
       instrPageFault,
       instrAccessFault,
@@ -562,8 +565,6 @@ package object xiangshan {
       storeAccessFault,
       loadAccessFault,
 
-      dasicsUIntrAccessFault,
-      dasicsSIntrAccessFault,
       dasicsULoadAccessFault,
       dasicsSLoadAccessFault,
       dasicsUStoreAccessFault,
@@ -576,7 +577,9 @@ package object xiangshan {
       instrAddrMisaligned,
       instrAccessFault,
       illegalInstr,
-      instrPageFault
+      instrPageFault,
+      dasicsUIntrAccessFault,
+      dasicsSIntrAccessFault
     )
     def dasicsSet = Seq(
       dasicsUIntrAccessFault,
@@ -660,9 +663,7 @@ package object xiangshan {
     writeIntRf = true,
     writeFpRf = false,
     hasRedirect = true,
-    exceptionOut = Seq(dasicsUIntrAccessFault, dasicsSIntrAccessFault)
   )
-
 
   val fenceCfg = FuConfig(
     name = "fence",

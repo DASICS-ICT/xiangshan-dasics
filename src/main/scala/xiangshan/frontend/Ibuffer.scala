@@ -22,6 +22,7 @@ import chisel3.util._
 import xiangshan._
 import utils._
 import xiangshan.ExceptionNO._
+import xiangshan.backend.fu.DasicsCheckFault
 
 class IbufPtr(implicit p: Parameters) extends CircularQueuePtr[IbufPtr](
   p => p(XSCoreParamsKey).IBufSize
@@ -48,6 +49,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Bool()
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
+  val dasicsBrFault: UInt = DasicsCheckFault()
+  val lastBranch: UInt = UInt(VAddrBits.W)
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
     inst   := fetch.instrs(i)
@@ -62,6 +65,12 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     crossPageIPFFix := fetch.crossPageIPFFix(i)
     triggered := fetch.triggered(i)
     dasicsUntrusted := fetch.dasicsUntrusted(i)
+    dasicsBrFault := DasicsCheckFault.noDasicsFault
+    lastBranch := DontCare
+    if (i == 0) { // only the first instr is a branch target
+      dasicsBrFault := fetch.dasicsBrFault
+      lastBranch := fetch.lastBranch
+    }
     this
   }
 
@@ -73,6 +82,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     cf.exceptionVec := 0.U.asTypeOf(ExceptionVec())
     cf.exceptionVec(instrPageFault) := ipf
     cf.exceptionVec(instrAccessFault) := acf
+    cf.exceptionVec(dasicsUIntrAccessFault) := dasicsBrFault === DasicsCheckFault.UJumpDasicsFault
+    cf.exceptionVec(dasicsSIntrAccessFault) := dasicsBrFault === DasicsCheckFault.SJumpDasicsFault
     cf.trigger := triggered
     cf.pd := pd
     cf.pred_taken := pred_taken
@@ -85,6 +96,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle {
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
+    cf.lastBranch.valid := dasicsBrFault =/= DasicsCheckFault.noDasicsFault
+    cf.lastBranch.bits := lastBranch
     cf
   }
 }

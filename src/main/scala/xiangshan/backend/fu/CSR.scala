@@ -1065,6 +1065,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasDasicsSStoreFault  = hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
   val hasDasicsUFetchFault  = hasException && exceptionVecFromRob(dasicsUIntrAccessFault)
   val hasDasicsSFetchFault  = hasException && exceptionVecFromRob(dasicsSIntrAccessFault)
+  // interrupt and dasics fetch both occurs
+  val hasDasicsFetchIntr    =
+    hasIntr && (exceptionVecFromRob(dasicsUIntrAccessFault) || exceptionVecFromRob(dasicsSIntrAccessFault))
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
   val triggerFrontendHitVec = csrio.exception.bits.uop.cf.trigger.frontendHit
@@ -1112,7 +1115,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // mtval write logic
   // Due to timing reasons of memExceptionVAddr, we delay the write of mtval and stval
   val memExceptionAddr   =  SignExt(csrio.memExceptionVAddr, XLEN)
-  val jumpExceptionAddr  =  csrio.exception.bits.uop.jumpTarget
 
   val updateTval = VecInit(Seq(
     hasInstrPageFault,
@@ -1131,15 +1133,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     hasDasicsSFetchFault
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
-      val tval = Mux(
+    val tval = Mux(
+      RegNext(RegNext((hasDasicsUFetchFault || hasDasicsSFetchFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
+      // for dasics fetch faults, epc is the last branch, tval is this instr
+      RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
+      Mux(
         RegNext(RegNext(hasInstrPageFault || hasInstrAccessFault)),
         RegNext(RegNext(Mux(
           csrio.exception.bits.uop.cf.crossPageIPFFix,
           SignExt(csrio.exception.bits.uop.cf.pc + 2.U, XLEN),
           iexceptionPC
         ))),
-        Mux( 
-          RegNext(RegNext(hasDasicsUFetchFault || hasDasicsSFetchFault)), RegNext(RegNext(jumpExceptionAddr)),
         memExceptionAddr
       )
     )
@@ -1194,6 +1198,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
     val dcsrNew = WireInit(dcsr.asTypeOf(new DcsrStruct))
     val debugModeNew = WireInit(debugMode)
+    val lastBranchInfo = WireInit(csrio.exception.bits.uop.cf.lastBranch)
+    val hasDasicsBrFault = (hasDasicsUFetchFault || hasDasicsSFetchFault) && lastBranchInfo.valid
+    val hasDasicsBrIntr = hasDasicsFetchIntr && lastBranchInfo.valid
     when (hasDebugTrap && !debugMode) {
       import DcsrStruct._
       debugModeNew := true.B
@@ -1217,14 +1224,23 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       //do nothing
     }.elsewhen (delegS && delegU) {
       ucause := causeNO
-      uepc := Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      // for branch faults, epc is the last branch; if interrupt occurs at the same time, also rewind
+      uepc := Mux(
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      )
       mstatusNew.pie.u := mstatusOld.ie.u
       mstatusNew.ie.u := false.B
       priviledgeMode := ModeU
       when (clearTval) { utval := 0.U }
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
-      sepc := Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      sepc := Mux(
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      )
       mstatusNew.spp := priviledgeMode
       mstatusNew.pie.s := mstatusOld.ie.s
       mstatusNew.ie.s := false.B
@@ -1232,7 +1248,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       when (clearTval) { stval := 0.U }
     }.otherwise {
       mcause := causeNO
-      mepc := Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      mepc := Mux(
+        hasDasicsBrFault || hasDasicsBrIntr,
+        lastBranchInfo.bits,
+        Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
+      )
       mstatusNew.mpp := priviledgeMode
       mstatusNew.pie.m := mstatusOld.ie.m
       mstatusNew.ie.m := false.B

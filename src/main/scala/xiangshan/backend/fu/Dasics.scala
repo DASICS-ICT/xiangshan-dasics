@@ -315,7 +315,7 @@ class JumpDasics(implicit p: Parameters) extends XSModule
   private val sMainBoundLo = RegInit(0.U(XLEN.W))
   private val uMainBoundHi = RegInit(0.U(XLEN.W))
   private val uMainBoundLo = RegInit(0.U(XLEN.W))
-  
+
 
   val control_flow_mapping = Map(
     MaskedRegMap(DasicsMainCall, dasics_main_call),
@@ -449,6 +449,64 @@ class DasicsJumpChecker(implicit p: Parameters) extends XSModule
       io.resp.dasics_fault := DasicsCheckFault.UJumpDasicsFault
     }
   }    
+}
+
+class DasicsBranchIO(implicit p: Parameters) extends XSBundle with DasicsConst {
+  val distribute_csr: DistributedCSRIO = Flipped(new DistributedCSRIO())
+  val mode: UInt = Input(UInt(2.W))
+  val valid: Bool = Input(Bool())
+  val lastBranch: UInt = Input(UInt(VAddrBits.W))
+  val target: UInt = Input(UInt(VAddrBits.W))
+  val resp = new DasicsRespBundle()
+}
+
+class DasicsBranchChecker(implicit p: Parameters) extends XSModule
+  with DasicsMethod with DasicsCheckerMethod with HasCSRConst {
+  val io: DasicsBranchIO = IO(new DasicsBranchIO())
+  val w = io.distribute_csr.w
+  val dasics: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry))
+  val mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenJumpMapping(
+    jump_init = dasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasics
+  )
+  private val dasics_main_call = RegInit(0.U(XLEN.W))
+  private val dasics_return_pc = RegInit(0.U(XLEN.W))
+  private val dasics_azone_return_pc = RegInit(0.U(XLEN.W))
+  private val dasics_main_cfg = RegInit(0.U(XLEN.W))
+  private val sMainBoundHi = RegInit(0.U(XLEN.W))
+  private val sMainBoundLo = RegInit(0.U(XLEN.W))
+  private val uMainBoundHi = RegInit(0.U(XLEN.W))
+  private val uMainBoundLo = RegInit(0.U(XLEN.W))
+  private val control_flow_mapping = Map(
+    MaskedRegMap(DasicsMainCall, dasics_main_call),
+    MaskedRegMap(DasicsReturnPc, dasics_return_pc),
+    MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
+    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
+    MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
+    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
+    MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
+  )
+  private val rdata = Wire(UInt(XLEN.W))
+  MaskedRegMap.generate(mapping ++ control_flow_mapping, w.bits.addr, rdata, w.valid, w.bits.data)
+
+  private val mainCfg = Wire(new DasicsMainCfg())
+  mainCfg.gen(dasics_main_cfg)
+  private val boundLo = Mux(io.mode === ModeU, uMainBoundLo, sMainBoundLo)
+  private val boundHi = Mux(io.mode === ModeU, uMainBoundHi, sMainBoundHi)
+
+  private val branchUntrusted = (io.mode === ModeU && mainCfg.uEnable || io.mode === ModeS && mainCfg.sEnable) &&
+    !dasics_jump_in_bound(
+      addr = io.lastBranch, boundHi = boundHi(VAddrBits - 1, 0), boundLo = boundLo(VAddrBits - 1, 0)
+    )
+  private val targetOutOfActive = dasics_jump_check(io.target, dasics)
+  private val illegalBranch = io.valid && branchUntrusted && targetOutOfActive &&
+    (io.target =/= dasics_return_pc) && (io.target =/= dasics_main_call) && (io.target =/= dasics_azone_return_pc)
+  io.resp.dasics_fault := Mux(
+    illegalBranch,
+    Mux(io.mode === ModeU, DasicsCheckFault.UJumpDasicsFault, DasicsCheckFault.SJumpDasicsFault),
+    DasicsCheckFault.noDasicsFault
+  )
 }
 
 class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
