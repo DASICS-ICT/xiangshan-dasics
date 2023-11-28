@@ -398,6 +398,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val sscratch = RegInit(UInt(XLEN.W), 0.U)
   val scounteren = RegInit(UInt(XLEN.W), 0.U)
 
+  // Supervisor-level MPK Registers
+  val spkrs = RegInit(UInt(XLEN.W), 0.U)
+  val spkctl = RegInit(UInt(XLEN.W), 0.U)
+  val spkctlMask = "h3".U(XLEN.W)  // 0: pke, 1: pks
+
   // sbpctl
   // Bits 0-7: {LOOP, RAS, SC, TAGE, BIM, BTB, uBTB}
   val sbpctl = RegInit(UInt(XLEN.W), "h7f".U)
@@ -551,6 +556,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(Fcsr, fcsr, wfn = fcsr_wfn)
   )
 
+  // User-Level MPK Register
+  val upkru = RegInit(UInt(XLEN.W), 0.U)
+
   // Hart Priviledge Mode
   val priviledgeMode = RegInit(UInt(2.W), ModeM)
 
@@ -645,7 +653,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "hff00b3ff".U(XLEN.W)),
+    MaskedRegMap(Medeleg, medeleg, "hfff00b3ff".U(XLEN.W)),
     MaskedRegMap(Mideleg, mideleg, "h222".U(XLEN.W)),
     MaskedRegMap(Mie, mie),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
@@ -720,10 +728,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(Uip, mip.asUInt, 0.U(XLEN.W), MaskedRegMap.Unwritable, uipMask)
   )
 
+  val mpkMapping = Map(
+    MaskedRegMap(Upkru, upkru),
+    MaskedRegMap(Spkrs, spkrs),
+    MaskedRegMap(Spkctl, spkctl, spkctlMask)
+  )
+
   val mapping = basicPrivMapping ++
                 perfCntMapping ++
                 pmpMapping ++
                 pmaMapping ++
+                mpkMapping ++
                 (if (HasFPU) fcsrMapping else Nil) ++
                 (if (HasCustomCSRCacheOp) cacheopMapping else Nil) ++
                 (if (HasNExtension) userMapping else Nil) ++
@@ -887,6 +902,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   tlbBundle.priv.sum   := mstatusStruct.sum.asBool
   tlbBundle.priv.imode := priviledgeMode
   tlbBundle.priv.dmode := Mux(debugMode && dcsr.asTypeOf(new DcsrStruct).mprven, ModeM, Mux(mstatusStruct.mprv.asBool, mstatusStruct.mpp, priviledgeMode))
+  tlbBundle.mpk.enable := Mux(priviledgeMode === ModeU, spkctl(0), Mux(priviledgeMode === ModeS, spkctl(1), false.B))
+  tlbBundle.mpk.pkr    := Mux(priviledgeMode === ModeU, upkru, spkrs)
 
   // Branch control
   val retTarget = WireInit(0.U)
@@ -1058,6 +1075,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasInstrAccessFault   = hasException && exceptionVecFromRob(instrAccessFault)
   val hasLoadAccessFault    = hasException && exceptionVecFromRob(loadAccessFault)
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
+  val hasPKULoadPageFault   = hasException && exceptionVecFromRob(pkuLoadPageFault)
+  val hasPKUStorePageFault  = hasException && exceptionVecFromRob(pkuStorePageFault)
+  val hasPKSLoadPageFault   = hasException && exceptionVecFromRob(pksLoadPageFault)
+  val hasPKSStorePageFault  = hasException && exceptionVecFromRob(pksStorePageFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
   val hasDasicsULoadFault   = hasException && exceptionVecFromRob(dasicsULoadAccessFault)
   val hasDasicsSLoadFault   = hasException && exceptionVecFromRob(dasicsSLoadAccessFault)
@@ -1086,10 +1107,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasExceptionVec = csrio.exception.bits.uop.cf.exceptionVec
   val regularExceptionVec = hasExceptionVec.take(16)
   val dasicsExceptionVec = ExceptionNO.selectDasics(hasExceptionVec)
+  val mpkExceptionVec = ExceptionNO.selectMpk(hasExceptionVec)
   val regularExceptionNO = ExceptionNO.priorities.foldRight(0.U)((i: Int, sum: UInt) => Mux(hasExceptionVec(i), i.U, sum))
-  val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + dasicsExcOffset).U, sum)) 
+  val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + dasicsExcOffset).U, sum))
+  val mpkExceptionNo = ExceptionNO.mpkSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(mpkExceptionVec(i), (i + mpkExcOffset).U, sum))
   
-  val exceptionNO = Mux(hasSingleStep || hasTriggerFire, 3.U, Mux(regularExceptionVec.reduce(_||_),regularExceptionNO,dasicsExceptionNo))
+  val exceptionNO = Mux(hasSingleStep || hasTriggerFire, 3.U,
+    Mux(regularExceptionVec.reduce(_||_), regularExceptionNO,
+      Mux(dasicsExceptionVec.reduce(_||_), dasicsExceptionNo, mpkExceptionNo)))
   val causeNO = (hasIntr << (XLEN-1)).asUInt | Mux(hasIntr, intrNOReg, exceptionNO)
 
   val hasExceptionIntr = csrio.exception.valid
@@ -1120,6 +1145,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     hasInstrPageFault,
     hasLoadPageFault,
     hasStorePageFault,
+    hasPKULoadPageFault,
+    hasPKUStorePageFault,
+    hasPKSLoadPageFault,
+    hasPKSStorePageFault,
     hasInstrAccessFault,
     hasLoadAccessFault,
     hasStoreAccessFault,
@@ -1364,6 +1393,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.dmaincall := dasicsMainCall
     difftest.io.dretpc := dasicsReturnPc
     difftest.io.dretpcfz := dasicsAZoneReturnPc
+    difftest.io.upkru := upkru
+    difftest.io.spkrs := spkrs
+    difftest.io.spkctl := spkctl
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {
