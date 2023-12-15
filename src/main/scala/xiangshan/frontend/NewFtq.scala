@@ -995,12 +995,11 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
         }
       })
     }
+    lastBranchActiveReg := false.B  // prevent erroneous carry over
+    // special case: pick up correct branch information
     when (r.cfiUpdate.isMisPred && r.cfiUpdate.taken) {
       lastBranchActiveReg := true.B
       lastBranchReg := r.cfiUpdate.pc
-    }
-    when (r.interrupt) {
-      lastBranchActiveReg := false.B  // avoid lastBranch to be carried over after XRet
     }
   }
 
