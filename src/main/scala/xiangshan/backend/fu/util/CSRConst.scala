@@ -86,7 +86,10 @@ trait HasCSRConst {
 
   val DasicsJmpCfgBase = 0x8c8
   val DasicsJmpBoundBase = 0x8c0
-  
+
+  // User-Level MPK Register
+  val Upkru         = 0x800
+
   // Supervisor Trap Setup
   val Sstatus       = 0x100
   val Sedeleg       = 0x102
@@ -117,6 +120,10 @@ trait HasCSRConst {
   /** 0x5C5-0x5E5 for cache instruction register*/
 
   val Sdsid         = 0x9C0
+
+  // Supervisor MPK Registers
+  val Spkctl        = 0x9D0
+  val Spkrs         = 0x9D1
 
   // Supervisor DASICS Settings (for User protection)
   val DasicsUMainCfg = 0x9E0
