@@ -167,6 +167,7 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
     csr.io.in.bits.uop.ctrl.fuOpType := CSROpType.wrt
     // Receive illegal instruction exception from CSR
     io.out.bits.uop.cf.exceptionVec(illegalInstr) := csr.io.out.bits.uop.cf.exceptionVec(illegalInstr)
+    io.out.bits.uop.ctrl.flushPipe := true.B
   }
 }
 
