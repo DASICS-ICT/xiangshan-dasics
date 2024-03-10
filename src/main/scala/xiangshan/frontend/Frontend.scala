@@ -117,7 +117,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsBrChecker.io.valid := ifu.io.dasics.lastBranch.valid
   dasicsBrChecker.io.lastBranch := ifu.io.dasics.lastBranch.bits
   dasicsBrChecker.io.target := ifu.io.dasics.startAddr
-  dasicsBrChecker.io.f2_fire := ifu.io.dasics.f2_fire
+  dasicsBrChecker.io.f1_fire := ifu.io.dasics.f1_fire
   ifu.io.dasics.s2_brResp := dasicsBrChecker.io.s2_resp.dasics_fault
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))

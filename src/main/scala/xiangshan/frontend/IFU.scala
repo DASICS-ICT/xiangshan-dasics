@@ -63,7 +63,7 @@ class IFUDasicsIO(implicit p: Parameters) extends XSBundle with DasicsConst {
   val levelTags: Vec[UInt] = Input(Vec(FetchWidth * 2, UInt(DasicsLevelBit.W)))
   // IF1 -> IF2: for branch checker
   val lastBranch = ValidIO(UInt(VAddrBits.W))
-  val f2_fire = Output(Bool())
+  val f1_fire = Output(Bool())
   val s2_brResp: UInt = Input(DasicsCheckFault())
 }
 
@@ -354,7 +354,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   XSPerfAccumulate("fetch_bubble_icache_not_resp",   f2_valid && !icacheRespAllValid )
 
   // for branch checker
-  io.dasics.f2_fire := f2_fire
+  io.dasics.f1_fire := f1_fire
   val f2_dasics_br_fault: UInt = io.dasics.s2_brResp
 
   /**

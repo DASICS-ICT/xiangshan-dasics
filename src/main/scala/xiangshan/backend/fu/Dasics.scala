@@ -304,7 +304,7 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
   def getDasicsUntrustedMemRwStatus(level: UInt, memEntries: Vec[DasicsEntry]): Vec[DasicsUntrustedRwStatus] =
     VecInit(memEntries.map { entry =>
       val durs = Wire(new DasicsUntrustedRwStatus)
-      durs := Mux(entry.cfg.valid,
+      durs.status := Mux(entry.cfg.valid,
         Mux(level > entry.level,
           DasicsUntrustedRwStatus.deny,
           Mux(level === entry.level, DasicsUntrustedRwStatus.ro, DasicsUntrustedRwStatus.rw)
@@ -317,7 +317,7 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
   def getDasicsUntrustedJmpRwStatus(level: UInt, jmpEntries: Vec[DasicsJumpEntry]): Vec[DasicsUntrustedRwStatus] =
     VecInit(jmpEntries.map { entry =>
       val durs = Wire(new DasicsUntrustedRwStatus)
-      durs := Mux(entry.cfg.valid,
+      durs.status := Mux(entry.cfg.valid,
         Mux(level > entry.level,
           DasicsUntrustedRwStatus.deny,
           Mux(level === entry.level, DasicsUntrustedRwStatus.ro, DasicsUntrustedRwStatus.rw)
@@ -395,9 +395,9 @@ class DasicsUntrustedRwCorrectorIO(implicit p: Parameters) extends XSBundle with
   val jmpEntries: Vec[DasicsJumpEntry] = Input(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
-  val rMask: UInt = UInt(XLEN.W)
-  val rAllowed: Bool = Bool()
-  val wAllowed: Bool = Bool()
+  val rMask: UInt = Output(UInt(XLEN.W))
+  val rAllowed: Bool = Output(Bool())
+  val wAllowed: Bool = Output(Bool())
 
   def connectIn(
                  addr: UInt, wdata: UInt, level: UInt, memEntries: Vec[DasicsEntry], jmpEntries: Vec[DasicsJumpEntry]
@@ -632,15 +632,15 @@ class DasicsJumpChecker(implicit p: Parameters) extends XSModule
 }
 
 class DasicsMainBoundBundle(implicit p: Parameters) extends XSBundle {
-  val mainCfg: DasicsMainCfg = Wire(new DasicsMainCfg())
-  val sMainBound: DasicsMainBound = Wire(new DasicsMainBound())
-  val uMainBound: DasicsMainBound = Wire(new DasicsMainBound())
+  val mainCfg: DasicsMainCfg = new DasicsMainCfg()
+  val sMainBound: DasicsMainBound = new DasicsMainBound()
+  val uMainBound: DasicsMainBound = new DasicsMainBound()
 }
 
 class DasicsControlFlowBundle(implicit p: Parameters) extends XSBundle {
-  val dasics_main_call: UInt = Wire(UInt(XLEN.W))
-  val dasics_return_pc: UInt = Wire(UInt(XLEN.W))
-  val dasics_azone_return_pc: UInt = Wire(UInt(XLEN.W))
+  val dasics_main_call: UInt = UInt(XLEN.W)
+  val dasics_return_pc: UInt = UInt(XLEN.W)
+  val dasics_azone_return_pc: UInt = UInt(XLEN.W)
 }
 
 class DasicsFrontendIO(implicit p: Parameters) extends XSBundle with DasicsConst {
@@ -704,7 +704,7 @@ class DasicsBranchIO(implicit p: Parameters) extends XSBundle with DasicsConst {
   val lastBranch: UInt = Input(UInt(VAddrBits.W))
   val target: UInt = Input(UInt(VAddrBits.W))
   // synchronize pipeline with IF1 -> IF2
-  val f2_fire: Bool = Input(Bool())
+  val f1_fire: Bool = Input(Bool())
   // return resp after a clock cycle
   val s2_resp = new DasicsRespBundle()
 }
@@ -735,11 +735,11 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
   val (brLevel, brHit) = PriorityMuxWithFlag(brLevelHits.map { case (hit, level) => (hit, level.U) })
 
   // pipeline: check in IF2
-  private val f2_fire = io.f2_fire
-  val s2_valid: Bool = RegEnable(next = io.valid, init = false.B, enable = f2_fire)
-  val s2_target: UInt = RegEnable(next = io.target, enable = f2_fire)
-  val s2_brUntrusted: Bool = RegEnable(next = branchUntrusted, enable = f2_fire)
-  val s2_brLevel: UInt = RegEnable(next = brLevel, enable = f2_fire)
+  private val f1_fire = io.f1_fire
+  val s2_valid: Bool = RegEnable(next = io.valid, init = false.B, enable = f1_fire)
+  val s2_target: UInt = RegEnable(next = io.target, enable = f1_fire)
+  val s2_brUntrusted: Bool = RegEnable(next = branchUntrusted, enable = f1_fire)
+  val s2_brLevel: UInt = RegEnable(next = brLevel, enable = f1_fire)
 
   private val s2_targetOutOfActive = dasics_jump_check(s2_target, s2_brLevel, dasics)
   private val s2_illegalBranch = s2_valid && s2_brUntrusted && s2_targetOutOfActive &&

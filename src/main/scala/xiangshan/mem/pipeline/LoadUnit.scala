@@ -222,6 +222,7 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.dasicsReq.valid := io.out.fire() //TODO: temporarily assignment
   io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
   io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.dasicsUntrusted
+  io.dasicsReq.bits.dasicsLevel := io.out.bits.uop.dasicsLevel
   io.dasicsReq.bits.operation := DasicsOp.read
 
   // Generate forwardMaskFast to wake up insts earlier
