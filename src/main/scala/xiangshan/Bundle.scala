@@ -38,7 +38,7 @@ import Chisel.experimental.chiselName
 import chipsalliance.rocketchip.config.Parameters
 import chisel3.util.BitPat.bitPatToUInt
 import xiangshan.backend.exu.ExuConfig
-import xiangshan.backend.fu.PMPEntry
+import xiangshan.backend.fu.{PMPEntry,DasicsConst}
 import xiangshan.frontend.Ftq_Redirect_SRAMEntry
 import xiangshan.frontend.AllFoldedHistories
 import xiangshan.frontend.AllAheadFoldedHistoryOldestBits
@@ -129,6 +129,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle {
   val ftqOffset = UInt(log2Up(PredictWidth).W)
   // needs to be checked by dasics
   val dasicsUntrusted = Bool()
+  val dasicsLevel = UInt(DasicsConst.DasicsLevelBit.W)
   // info of branch fault by last branch
   val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
 }
@@ -231,6 +232,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
+  val dasicsLevel = UInt(DasicsConst.DasicsLevelBit.W)
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B

@@ -120,12 +120,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   cfOut := cfIn
   val flushPipe = Wire(Bool())
 
-  val (valid, src1, src2, func, isUntrusted) = (
+  val (valid, rs1, src1, src2, func, isUntrusted, dasicsLevel) = (
     io.in.valid,
+    io.in.bits.uop.ctrl.lsrc(0),
     io.in.bits.src(0),
     io.in.bits.uop.ctrl.imm,
     io.in.bits.uop.ctrl.fuOpType,
-    io.in.bits.uop.dasicsUntrusted
+    io.in.bits.uop.dasicsUntrusted,
+    io.in.bits.uop.dasicsLevel
   )
 
   // CSR define
@@ -342,12 +344,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsAZoneReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasics_mem: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
-  val dasics_jump: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
-  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMemMapping(
+  val dasics_jump: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))
+  val (dasicsMemMapping, dasicsMemLevelMapping) = dasicsGenMemMapping(
     mem_init = dasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasics_mem
-  ) ++ dasicsGenJumpMapping(
-    jump_init = dasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasics_jump
-  ) ++ Map(
+  )
+  val (dasicsJumpMapping, dasicsJumpLevelMapping) = dasicsGenJumpMapping(
+    jump_init = dasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase,
+    jumpEntries = dasics_jump
+  )
+  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsMemMapping ++
+    dasicsJumpMapping ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
@@ -768,7 +774,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
-  val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
+  val dasicsURC: DasicsUntrustedRwCorrector = Module(new DasicsUntrustedRwCorrector)
+  dasicsURC.io.connectIn(
+    addr = addr, wdata = wdata, level = dasicsLevel, memEntries = dasics_mem, jmpEntries = dasics_jump
+  )
+  val addrInUntrustedSpace: Bool = csrAddrInUntrustedSpace(
+    addr, DasicsLibCfgBase, DasicsLibBoundBase, DasicsJmpCfgBase, DasicsJmpBoundBase
+  )
+  val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) ||
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
     (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneReturnPC.U) ||
     (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
@@ -785,15 +798,27 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // general CSR wen check
   val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
+  val attemptRo: Bool = LookupTreeDefault(func, false.B, List(
+    CSROpType.set   -> (rs1 === 0.U),
+    CSROpType.clr   -> (rs1 === 0.U),
+    CSROpType.seti  -> (src1 === 0.U),
+    CSROpType.clri  -> (src1 === 0.U)
+  ))  // check whether instr only attempt to read
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, priviledgeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInDasics && isUntrusted)
-  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
+  val dasicsUntrustedPermitted: Bool = dasicsURC.io.rAllowed && (attemptRo || dasicsURC.io.wAllowed)
+  val dasicsPermitted: Bool = !(
+    isUntrusted && CSROpType.needAccess(func) && !(addrInUntrustedSpace && dasicsUntrustedPermitted)
+    )
+  val permitted: Bool = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && (
+    !addrInDasics || dasicsPermitted
+    )
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
-  io.out.bits.data := rdata
+  val readMask: UInt = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.rMask, Fill(XLEN, 1.U(1.W)))
+  io.out.bits.data := rdata & readMask
   io.out.bits.uop := io.in.bits.uop
   io.out.bits.uop.cf := cfOut
   io.out.bits.uop.ctrl.flushPipe := flushPipe

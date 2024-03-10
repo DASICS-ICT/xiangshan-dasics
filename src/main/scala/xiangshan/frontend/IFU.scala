@@ -24,7 +24,7 @@ import xiangshan._
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 import utils._
-import xiangshan.backend.fu.{PMPReqBundle, PMPRespBundle, DasicsCheckFault}
+import xiangshan.backend.fu.{PMPReqBundle, PMPRespBundle, DasicsCheckFault, DasicsConst}
 
 trait HasInstrMMIOConst extends HasXSParameter with HasIFUConst{
   def mmioBusWidth = 64
@@ -56,13 +56,15 @@ class UncacheInterface(implicit p: Parameters) extends XSBundle {
   val toUncache   = DecoupledIO( new InsUncacheReq )
 }
 
-class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
-  // for tagger
+class IFUDasicsIO(implicit p: Parameters) extends XSBundle with DasicsConst {
+  // IF1: for tagger
   val startAddr: UInt = Output(UInt(VAddrBits.W))
   val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
-  // for branch checker
+  val levelTags: Vec[UInt] = Input(Vec(FetchWidth * 2, UInt(DasicsLevelBit.W)))
+  // IF1 -> IF2: for branch checker
   val lastBranch = ValidIO(UInt(VAddrBits.W))
-  val brResp: UInt = Input(DasicsCheckFault())
+  val f2_fire = Output(Bool())
+  val s2_brResp: UInt = Input(DasicsCheckFault())
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
@@ -210,15 +212,17 @@ class NewIFU(implicit p: Parameters) extends XSModule
   // create DASICS tags at IFU stage 1
   io.dasics.startAddr := f1_ftq_req.startAddr
   val f1_dasics_tag: Vec[Bool] = Wire(Vec(PredictWidth, Bool()))
+  val f1_dasics_level: Vec[UInt] = Wire(Vec(PredictWidth, UInt(DasicsConst.DasicsLevelBit.W)))
   if (HasCExtension) {
     f1_dasics_tag := io.dasics.notTrusted
+    f1_dasics_level := io.dasics.levelTags
   } else {  // not compressed, discard half of the tags
     f1_dasics_tag.zipWithIndex.foreach { case (tag, i) => tag := io.dasics.notTrusted(i * 2) }
+    f1_dasics_level.zipWithIndex.foreach { case (level, i) => level := io.dasics.levelTags(i * 2) }
   }
   // for branch checker
   io.dasics.lastBranch.valid := f1_ftq_req.lastBranch.valid
   io.dasics.lastBranch.bits := f1_ftq_req.lastBranch.bits
-  val f1_dasics_br_fault: UInt = io.dasics.brResp
 
   /**
     ******************************************************************************
@@ -275,7 +279,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f2_resend_vaddr     = RegEnable(next = f1_ftq_req.startAddr + 2.U, enable = f1_fire)
 
   val f2_dasics_tag       = RegEnable(next = f1_dasics_tag, enable = f1_fire)
-  val f2_dasics_br_fault  = RegEnable(next = f1_dasics_br_fault, enable = f1_fire)
+  val f2_dasics_level     = RegEnable(next = f1_dasics_level, enable = f1_fire)
 
   def isNextLine(pc: UInt, startAddr: UInt) = {
     startAddr(blockOffBits) ^ pc(blockOffBits)
@@ -336,7 +340,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   for(i <- 0 until 4){
     val preDecoderIn  = preDecoders(i).io.in
     preDecoderIn.data := f2_cut_data(i)
-    preDecoderIn.frontendTrigger := io.frontendTrigger  
+    preDecoderIn.frontendTrigger := io.frontendTrigger
     preDecoderIn.pc  := f2_pc
   }
 
@@ -349,6 +353,9 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   XSPerfAccumulate("fetch_bubble_icache_not_resp",   f2_valid && !icacheRespAllValid )
 
+  // for branch checker
+  io.dasics.f2_fire := f2_fire
+  val f2_dasics_br_fault: UInt = io.dasics.s2_brResp
 
   /**
     ******************************************************************************
@@ -401,6 +408,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f3_pAddrs   = RegEnable(next = f2_paddrs, enable = f2_fire)
   val f3_resend_vaddr   = RegEnable(next = f2_resend_vaddr,      enable = f2_fire)
   val f3_dasics_tag     = RegEnable(next = f2_dasics_tag,  enable = f2_fire)
+  val f3_dasics_level   = RegEnable(next = f2_dasics_level, enable = f2_fire)
   val f3_dasics_br_fault = RegEnable(next = f2_dasics_br_fault, enable = f2_fire)
 
   when(f3_valid && !f3_ftq_req.ftqOffset.valid){
@@ -630,6 +638,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.crossPageIPFFix := f3_crossPageFault
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
+  io.toIbuffer.bits.dasicsLevel := f3_dasics_level
   io.toIbuffer.bits.dasicsBrFault := f3_dasics_br_fault
   io.toIbuffer.bits.lastBranch := f3_ftq_req.lastBranch.bits
 

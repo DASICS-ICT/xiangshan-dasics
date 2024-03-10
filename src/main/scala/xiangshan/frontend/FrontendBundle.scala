@@ -21,7 +21,7 @@ import chisel3.util._
 import chisel3.experimental.chiselName
 import xiangshan._
 import xiangshan.frontend.icache._
-import xiangshan.backend.fu.DasicsCheckFault
+import xiangshan.backend.fu.{DasicsConst, DasicsCheckFault}
 import utils._
 import scala.math._
 import scala.{Tuple2 => &}
@@ -126,6 +126,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Vec(PredictWidth, Bool())
   val triggered    = Vec(PredictWidth, new TriggerCf)
   val dasicsUntrusted = Vec(PredictWidth, Bool())
+  val dasicsLevel  = Vec(PredictWidth, UInt(DasicsConst.DasicsLevelBit.W))
   val dasicsBrFault: UInt = DasicsCheckFault()  // last branch to this instr block is illegal
   val lastBranch: UInt = UInt(VAddrBits.W)
 }
