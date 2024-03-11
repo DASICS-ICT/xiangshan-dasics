@@ -852,11 +852,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsJmpLevelClear: Bool = wen && csrAddrInDasicsJmpCfg(addr, DasicsJmpCfgBase) && !isUntrusted && !attemptRo
 
   val dasicsMemLevelWen = dasicsMemLevelClear
-  val dasicsMemLevelWaddr = Wire(0.U(log2Up(NumDasicsMemBounds).W))
-  val dasicsMemLevelWdata = Wire(0.U(DasicsLevelBit.W))
+  val dasicsMemLevelWaddr = 0.U(log2Up(NumDasicsMemBounds).W)
+  val dasicsMemLevelWdata = 0.U(DasicsLevelBit.W)
   val dasicsJmpLevelWen = dasicsJmpLevelClear
-  val dasicsJmpLevelWaddr = Wire(0.U(log2Up(NumDasicsMemBounds).W))
-  val dasicsJmpLevelWdata = Wire(0.U(DasicsLevelBit.W))
+  val dasicsJmpLevelWaddr = 0.U(log2Up(NumDasicsMemBounds).W)
+  val dasicsJmpLevelWdata = 0.U(DasicsLevelBit.W)
   DasicsRegMap.levelGenerate(
     dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata, dasicsMemLevelClear
   )
