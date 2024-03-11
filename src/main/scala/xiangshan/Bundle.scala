@@ -548,6 +548,14 @@ class DistributedCSRIO(implicit p: Parameters) extends XSBundle {
     val addr = Output(UInt(12.W))
     val data = Output(UInt(XLEN.W))
   })
+  val dasicsMemLevel = ValidIO(new DistributedDasicsLevel)
+  val dasicsJmpLevel = ValidIO(new DistributedDasicsLevel)
+}
+
+class DistributedDasicsLevel(implicit p: Parameters) extends XSBundle with DasicsConst {
+  val addr: UInt = Output(UInt(log2Up(NumDasicsMemBounds).W))
+  val data: UInt = Output(UInt(DasicsLevelBit.W))
+  val clear: Bool = Output(Bool())
 }
 
 class DistributedCSRUpdateReq(implicit p: Parameters) extends XSBundle {
