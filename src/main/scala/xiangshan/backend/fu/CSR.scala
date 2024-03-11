@@ -120,14 +120,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   cfOut := cfIn
   val flushPipe = Wire(Bool())
 
-  val (valid, rs1, src1, src2, func, isUntrusted, dasicsLevel) = (
+  val (valid, rs1, src1, src2, dasicsDest, func, isUntrusted, dasicsLevel, dasicsMvType) = (
     io.in.valid,
     io.in.bits.uop.ctrl.lsrc(0),
     io.in.bits.src(0),
     io.in.bits.uop.ctrl.imm,
+    io.in.bits.src(1),
     io.in.bits.uop.ctrl.fuOpType,
     io.in.bits.uop.dasicsUntrusted,
-    io.in.bits.uop.dasicsLevel
+    io.in.bits.uop.dasicsLevel,
+    io.in.bits.uop.ctrl.ldest
   )
 
   // CSR define
@@ -851,12 +853,25 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsMemLevelClear: Bool = wen && csrAddrInDasicsMemCfg(addr, DasicsLibCfgBase) && !isUntrusted && !attemptRo
   val dasicsJmpLevelClear: Bool = wen && csrAddrInDasicsJmpCfg(addr, DasicsJmpCfgBase) && !isUntrusted && !attemptRo
 
-  val dasicsMemLevelWen = dasicsMemLevelClear
-  val dasicsMemLevelWaddr = 0.U(log2Up(NumDasicsMemBounds).W)
-  val dasicsMemLevelWdata = 0.U(DasicsLevelBit.W)
-  val dasicsJmpLevelWen = dasicsJmpLevelClear
-  val dasicsJmpLevelWaddr = 0.U(log2Up(NumDasicsMemBounds).W)
-  val dasicsJmpLevelWdata = 0.U(DasicsLevelBit.W)
+  // Set DASICS level when untrusted code try to copy
+  val dasicsBndMv = valid && func === CSROpType.di_mv
+  val dasicsLevelOv = (dasicsLevel === (~0.U(DasicsLevelBit.W)).asUInt) && dasicsBndMv && isUntrusted
+  val dasicsNextLevel = dasicsLevel + 1.U
+
+  val dasicsBMC: DasicsBndMvChecker = Module(new DasicsBndMvChecker())
+  dasicsBMC.io.connectIn(
+    src = src1, dest = dasicsDest, bndType = dasicsMvType,
+    memRwStatus = dasicsURC.io.memRwStatus, jmpRwStatus = dasicsURC.io.jmpRwStatus
+  )
+  val dasicsBMpermitted = !isUntrusted || (!dasicsLevelOv && dasicsBMC.io.allowed)
+  val dasicsBMLevelWen = dasicsBndMv && isUntrusted && dasicsBMpermitted
+
+  val dasicsMemLevelWen = dasicsMemLevelClear || (dasicsBMLevelWen && dasicsBMC.io.isMem)
+  val dasicsMemLevelWaddr = dasicsDest
+  val dasicsMemLevelWdata = dasicsNextLevel
+  val dasicsJmpLevelWen = dasicsJmpLevelClear || (dasicsBMLevelWen && dasicsBMC.io.isJmp)
+  val dasicsJmpLevelWaddr = dasicsDest
+  val dasicsJmpLevelWdata = dasicsNextLevel
   DasicsRegMap.levelGenerate(
     dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata, dasicsMemLevelClear
   )

@@ -150,6 +150,22 @@ class DasicsJumpEntry(implicit p: Parameters) extends XSBundle with DasicsConst 
   }
 }
 
+class DasicsUntrustedRwStatus extends Bundle {
+  val status: UInt = UInt(2.W)
+
+  def isDeny: Bool = status === DasicsUntrustedRwStatus.deny
+  def isRO: Bool = status === DasicsUntrustedRwStatus.ro
+  def isRW: Bool = status === DasicsUntrustedRwStatus.rw
+  def isEmpty: Bool = status === DasicsUntrustedRwStatus.empty
+}
+
+private object DasicsUntrustedRwStatus {
+  val deny: UInt = 0.U(2.W)
+  val ro: UInt = 1.U(2.W)
+  val rw: UInt = 2.U(2.W)
+  val empty: UInt = 3.U(2.W)
+}
+
 trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
   def dasicsMemInit(): (Vec[UInt], Vec[UInt], Vec[UInt]) = {
     val dasicsMemCfgPerCSR = XLEN / DasicsMemConfig.getWidth
@@ -285,22 +301,6 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
       csrAddrInDasicsJmpCfg(addr, jmpCfgBase) || csrAddrInDasicsJmpBound(addr, jmpBoundBase)
   }
 
-  class DasicsUntrustedRwStatus extends Bundle {
-    val status: UInt = UInt(2.W)
-
-    def isDeny: Bool = status === DasicsUntrustedRwStatus.deny
-    def isRO: Bool = status === DasicsUntrustedRwStatus.ro
-    def isRW: Bool = status === DasicsUntrustedRwStatus.rw
-    def isEmpty: Bool = status === DasicsUntrustedRwStatus.empty
-  }
-
-  private object DasicsUntrustedRwStatus {
-    val deny: UInt = 0.U(2.W)
-    val ro: UInt = 1.U(2.W)
-    val rw: UInt = 2.U(2.W)
-    val empty: UInt = 3.U(2.W)
-  }
-
   def getDasicsUntrustedMemRwStatus(level: UInt, memEntries: Vec[DasicsEntry]): Vec[DasicsUntrustedRwStatus] =
     VecInit(memEntries.map { entry =>
       val durs = Wire(new DasicsUntrustedRwStatus)
@@ -326,6 +326,11 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
       )
       durs
     })
+
+  object DasicsBndMvType {
+    val mem = "b0".U
+    val jmp = "b1".U
+  }
 
   // Singleton companion object for DasicsEntry, with implicit parameters set
   private object DasicsEntry extends DasicsEntry
@@ -455,6 +460,47 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
     memCfgCanWrite,
     Mux(isMemBound, memBoundCanWrite, Mux(isJmpCfg, jmpCfgCanWrite, false.B))
   )
+}
+
+class DasicsBndMvCheckerIO(implicit p: Parameters) extends XSBundle with DasicsMethod {
+  val src, dest = Input(UInt(XLEN.W))
+  val bndType: UInt = Input(UInt(5.W))
+  val memRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
+  val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
+  val allowed: Bool = Output(Bool())
+  val isMem, isJmp = Output(Bool())
+
+  def connectIn(src: UInt, dest: UInt, bndType: UInt,
+                memRwStatus: Vec[DasicsUntrustedRwStatus], jmpRwStatus: Vec[DasicsUntrustedRwStatus]): Unit = {
+    this.src := src
+    this.dest := dest
+    this.bndType := bndType
+    this.memRwStatus := memRwStatus
+    this.jmpRwStatus := jmpRwStatus
+  }
+}
+
+// Instantiated in CSR
+class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMethod {
+  val io: DasicsBndMvCheckerIO = IO(new DasicsBndMvCheckerIO)
+
+  val isMem: Bool = io.bndType === DasicsBndMvType.mem
+  val isJmp: Bool = io.bndType === DasicsBndMvType.jmp
+  val unknownType: Bool = !(isMem || isJmp)
+  val memOutOfBounds: Bool = (io.src >= NumDasicsMemBounds.U) || (io.dest >= NumDasicsMemBounds.U)
+  val jmpOutOfBounds: Bool = (io.src >= NumDasicsJumpBounds.U) || (io.dest >= NumDasicsJumpBounds.U)
+  val memSrcStatus = io.memRwStatus(io.src)
+  val memDestStatus = io.memRwStatus(io.dest)
+  val jmpSrcStatus = io.jmpRwStatus(io.src)
+  val jmpDestStatus = io.jmpRwStatus(io.dest)
+  val memCanAccess = (memSrcStatus.isRO || memSrcStatus.isRW) && (memDestStatus.isRW || memDestStatus.isEmpty)
+  val jmpCanAccess = (jmpSrcStatus.isRO || jmpSrcStatus.isRW) && (jmpSrcStatus.isRW || jmpDestStatus.isEmpty)
+
+  io.allowed := !unknownType && (
+    (isMem && !memOutOfBounds && memCanAccess) || (isJmp && !jmpOutOfBounds && jmpCanAccess)
+    )
+  io.isMem := isMem
+  io.isJmp := isJmp
 }
 
 class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with HasCSRConst {
