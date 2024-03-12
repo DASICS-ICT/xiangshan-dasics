@@ -508,6 +508,7 @@ class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with 
 
   val w = io.distribute_csr.w
   val levelW = io.distribute_csr.dasicsMemLevel
+  val bmw = io.distribute_csr.dasicsMemBounds // DIBndMv
 
   private val dasics = Wire(Vec(NumDasicsMemBounds, new DasicsEntry))
   val (mapping, levelMapping) = dasicsGenMemMapping(
@@ -517,6 +518,9 @@ class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with 
   val rdata: UInt = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping, w.bits.addr, rdata, w.valid, w.bits.data)
   DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data, levelW.bits.clear)
+  DasicsRegMap.memBoundsGenerate(
+    mapping, bmw.bits.cfgAddr, bmw.bits.boundLoAddr, bmw.valid, bmw.bits.entry, bmw.bits.cfgData, bmw.bits.cfgMask
+  )
 
   io.entries := dasics
 }
@@ -702,6 +706,7 @@ class DasicsFrontend(implicit p: Parameters) extends XSModule with DasicsMethod 
   val io: DasicsFrontendIO = IO(new DasicsFrontendIO())
   val w = io.distributed_csr.w
   private val levelW = io.distributed_csr.dasicsJmpLevel
+  val bmw = io.distributed_csr.dasicsJmpBounds
 
   val dasics: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))
   val (mapping, levelMapping) = dasicsGenJumpMapping(
@@ -729,6 +734,9 @@ class DasicsFrontend(implicit p: Parameters) extends XSModule with DasicsMethod 
   private val rdata = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping ++ control_flow_mapping, w.bits.addr, rdata, w.valid, w.bits.data)
   DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data, levelW.bits.clear)
+  DasicsRegMap.jmpBoundsGenerate(
+    mapping, bmw.bits.cfgAddr, bmw.bits.boundLoAddr, bmw.valid, bmw.bits.entry, bmw.bits.cfgData, bmw.bits.cfgMask
+  )
   private val mainCfg = Wire(new DasicsMainCfg())
   mainCfg.gen(dasics_main_cfg)
   private val sMainBound, uMainBound = Wire(new DasicsMainBound())

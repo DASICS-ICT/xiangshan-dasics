@@ -38,7 +38,7 @@ import Chisel.experimental.chiselName
 import chipsalliance.rocketchip.config.Parameters
 import chisel3.util.BitPat.bitPatToUInt
 import xiangshan.backend.exu.ExuConfig
-import xiangshan.backend.fu.{PMPEntry,DasicsConst}
+import xiangshan.backend.fu.{DasicsConst, DasicsEntry, DasicsJumpEntry, PMPEntry}
 import xiangshan.frontend.Ftq_Redirect_SRAMEntry
 import xiangshan.frontend.AllFoldedHistories
 import xiangshan.frontend.AllAheadFoldedHistoryOldestBits
@@ -550,12 +550,30 @@ class DistributedCSRIO(implicit p: Parameters) extends XSBundle {
   })
   val dasicsMemLevel = ValidIO(new DistributedDasicsLevel)
   val dasicsJmpLevel = ValidIO(new DistributedDasicsLevel)
+  val dasicsMemBounds = ValidIO(new DistributedDasicsMem())
+  val dasicsJmpBounds = ValidIO(new DistributedDasicsJmp())
 }
 
 class DistributedDasicsLevel(implicit p: Parameters) extends XSBundle with DasicsConst {
   val addr: UInt = Output(UInt(log2Up(NumDasicsMemBounds).W))
   val data: UInt = Output(UInt(DasicsLevelBit.W))
   val clear: Bool = Output(Bool())
+}
+
+class DistributedDasicsMem(implicit p: Parameters) extends XSBundle{
+  val cfgAddr: UInt = Output(UInt(12.W))
+  val boundLoAddr: UInt = Output(UInt(12.W))
+  val entry: DasicsEntry = Output(new DasicsEntry())
+  val cfgData: UInt = Output(UInt(XLEN.W))
+  val cfgMask: UInt = Output(UInt(XLEN.W))
+}
+
+class DistributedDasicsJmp(implicit p: Parameters) extends XSBundle{
+  val cfgAddr: UInt = Output(UInt(12.W))
+  val boundLoAddr: UInt = Output(UInt(12.W))
+  val entry: DasicsJumpEntry = Output(new DasicsJumpEntry())
+  val cfgData: UInt = Output(UInt(XLEN.W))
+  val cfgMask: UInt = Output(UInt(XLEN.W))
 }
 
 class DistributedCSRUpdateReq(implicit p: Parameters) extends XSBundle {

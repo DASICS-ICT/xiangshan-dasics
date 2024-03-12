@@ -910,6 +910,20 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.data := dasicsJmpLevelWdata
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.clear := dasicsJmpLevelClear
 
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.valid := dasicsBMWen
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.cfgAddr := dasicsMemCfgAddr
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.boundLoAddr := dasicsMemBndLoAddr
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.entry := dasicsMemSrc
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.cfgData := dasicsMemCfgWData
+  csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.cfgMask := dasicsMemCfgWMask
+
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.valid := dasicsBMWen
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.bits.cfgAddr := dasicsJmpCfgAddr
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.bits.boundLoAddr := dasicsJmpBndLoAddr
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.bits.entry := dasicsJmpSrc
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.bits.cfgData := dasicsJmpCfgWData
+  csrio.customCtrl.distribute_csr.dasicsJmpBounds.bits.cfgMask := dasicsJmpCfgWMask
+
   when (RegNext(csrio.fpu.fflags.valid)) {
     fcsr := fflags_wfn(update = true)(RegNext(csrio.fpu.fflags.bits))
   }
