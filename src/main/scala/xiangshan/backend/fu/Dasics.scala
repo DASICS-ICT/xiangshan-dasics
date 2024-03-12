@@ -18,6 +18,8 @@ trait DasicsConst {
   // 4 levels
   val DasicsMaxLevel = 4
   val DasicsLevelBit: Int = log2Ceil(DasicsMaxLevel)
+  // scratchpad: a DasicsJumpEntry for editing
+  val DasicsScratchpadIndex: UInt = 31.U
 }
 
 object DasicsConst extends DasicsConst
@@ -133,6 +135,15 @@ class DasicsJumpEntry(implicit p: Parameters) extends XSBundle with DasicsConst 
   // assign values (bounds parameter are XLEN-length)
   def gen(cfg: DasicsConfig, boundLo: UInt, boundHi: UInt, level: UInt): Unit = {
     this.cfg := cfg
+    this.boundLo := Cat(boundLo(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
+    this.boundHi := Cat(boundHi(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
+    this.level := level
+  }
+
+  def gen(cfgReg: UInt, boundLo: UInt, boundHi: UInt, level: UInt): Unit = {
+    val cfgWire = Wire(new DasicsJumpConfig)
+    cfgWire.v := cfgReg(0)
+    this.cfg := cfgWire
     this.boundLo := Cat(boundLo(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
     this.boundHi := Cat(boundHi(VAddrBits - 1, DasicsGrainBit),0.U(DasicsGrainBit.W))
     this.level := level
@@ -294,11 +305,16 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
   def csrAddrInDasicsJmpBound(addr: UInt, jmpBoundBase: Int): Bool =
     (addr >= jmpBoundBase.U) && (addr < (jmpBoundBase + NumDasicsJumpBounds * 2).U)
 
-  def csrAddrInUntrustedSpace(
-                               addr: UInt, memCfgBase: Int, memBoundBase: Int, jmpCfgBase: Int, jmpBoundBase: Int
+  def csrAddrInDasicsScratchCfg(addr: UInt, scratchCfg: Int): Bool = addr === scratchCfg.U
+  def csrAddrInDasicsScratchBound(addr: UInt, scratchBoundBase: Int): Bool =
+    (addr >> 1).asUInt === (scratchBoundBase / 2).asUInt
+
+  def csrAddrInUntrustedSpace(addr: UInt, memCfgBase: Int, memBoundBase: Int, jmpCfgBase: Int, jmpBoundBase: Int,
+                              scratchCfg: Int, scratchBoundBase: Int
                              ): Bool = {
     csrAddrInDasicsMemCfg(addr, memCfgBase) || csrAddrInDasicsMemBound(addr, memBoundBase) ||
-      csrAddrInDasicsJmpCfg(addr, jmpCfgBase) || csrAddrInDasicsJmpBound(addr, jmpBoundBase)
+      csrAddrInDasicsJmpCfg(addr, jmpCfgBase) || csrAddrInDasicsJmpBound(addr, jmpBoundBase) ||
+      csrAddrInDasicsScratchCfg(addr, scratchCfg) || csrAddrInDasicsScratchBound(addr, scratchBoundBase)
   }
 
   def getDasicsUntrustedMemRwStatus(level: UInt, memEntries: Vec[DasicsEntry]): Vec[DasicsUntrustedRwStatus] =
@@ -326,6 +342,16 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
       )
       durs
     })
+
+  def getDasicsUntrustedScratchRwStatus(level: UInt, scratch: DasicsJumpEntry): DasicsUntrustedRwStatus = {
+    val durs = Wire(new DasicsUntrustedRwStatus)
+    durs.status := Mux(scratch.cfg.valid,
+      // only discriminate empty and rw
+      Mux(level >= scratch.level, DasicsUntrustedRwStatus.empty, DasicsUntrustedRwStatus.rw),
+      DasicsUntrustedRwStatus.empty
+    )
+    durs
+  }
 
   object DasicsBndMvType {
     val mem = "b0".U
@@ -398,21 +424,23 @@ class DasicsUntrustedRwCorrectorIO(implicit p: Parameters) extends XSBundle with
   val level: UInt = Input(UInt(DasicsLevelBit.W))
   val memEntries: Vec[DasicsEntry] = Input(Vec(NumDasicsMemBounds, new DasicsEntry()))
   val jmpEntries: Vec[DasicsJumpEntry] = Input(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))
+  val scratch: DasicsJumpEntry = Input(new DasicsJumpEntry())
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
+  val scratchRwStatus: DasicsUntrustedRwStatus = Output(new DasicsUntrustedRwStatus)
   val rMask: UInt = Output(UInt(XLEN.W))
   val wMask: UInt = Output(UInt(XLEN.W))
   val rAllowed: Bool = Output(Bool())
   val wAllowed: Bool = Output(Bool())
 
-  def connectIn(
-                 addr: UInt, wdata: UInt, level: UInt, memEntries: Vec[DasicsEntry], jmpEntries: Vec[DasicsJumpEntry]
-               ): Unit = {
+  def connectIn(addr: UInt, wdata: UInt, level: UInt, memEntries: Vec[DasicsEntry], jmpEntries: Vec[DasicsJumpEntry],
+                scratch: DasicsJumpEntry): Unit = {
     this.addr := addr
     this.wdata := wdata
     this.level := level
     this.memEntries := memEntries
     this.jmpEntries := jmpEntries
+    this.scratch := scratch
   }
 }
 
@@ -422,11 +450,14 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
 
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = getDasicsUntrustedMemRwStatus(io.level, io.memEntries)
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = getDasicsUntrustedJmpRwStatus(io.level, io.jmpEntries)
+  val scratchRwStatus = getDasicsUntrustedScratchRwStatus(io.level, io.scratch)
 
   val isMemCfg: Bool = csrAddrInDasicsMemCfg(io.addr, DasicsLibCfgBase)
   val isMemBound: Bool = csrAddrInDasicsMemBound(io.addr, DasicsLibBoundBase)
   val isJmpCfg: Bool = csrAddrInDasicsJmpCfg(io.addr, DasicsJmpCfgBase)
   val isJmpBound: Bool = csrAddrInDasicsJmpBound(io.addr, DasicsJmpBoundBase)
+  val isScratchCfg = csrAddrInDasicsScratchCfg(io.addr, DasicsScratchCfg)
+  val isScratchBound = csrAddrInDasicsScratchBound(io.addr, DasicsScratchBase)
   val memBoundOffset: UInt = (io.addr - DasicsLibBoundBase.U)(4, 0)
   val jmpBoundOffset: UInt = (io.addr - DasicsJmpBoundBase.U)(4, 0)
   val memEntry: DasicsEntry = io.memEntries(memBoundOffset(4, 1))
@@ -449,16 +480,24 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   val jmpBoundPairStatus: DasicsUntrustedRwStatus = jmpRwStatus(jmpBoundOffset(2, 1))
   val jmpBoundCanRead: Bool = jmpBoundPairStatus.isRO || jmpBoundPairStatus.isRW
 
+  val scratchCfgCanRead = scratchRwStatus.isRW
+  val scratchBoundCanRead = scratchRwStatus.isRW
+  val scratchBoundShrink = Mux(io.addr(0), io.wdata <= io.scratch.boundHi, io.wdata >= io.scratch.boundLo)
+  val scratchBoundCanWrite = scratchRwStatus.isRW && scratchBoundShrink
+
   io.memRwStatus := memRwStatus
   io.jmpRwStatus := jmpRwStatus
+  io.scratchRwStatus := scratchRwStatus
 
   io.rMask := Mux(isMemCfg, memCfgRMask, Mux(isJmpCfg, jmpCfgRMask, Fill(XLEN, 1.U(1.W))))
   io.wMask := Mux(isMemCfg, memCfgWBlockMask, Mux(isJmpCfg, jmpCfgWBlockMask, Fill(XLEN, 1.U(1.W))))
-  io.rAllowed := Mux(isMemBound, memBoundCanRead, Mux(isJmpBound, jmpBoundCanRead, true.B))
-  // TODO: jump bounds can only be edited in scratchpad
+  io.rAllowed := Mux(isMemBound,
+    memBoundCanRead,
+    Mux(isJmpBound, jmpBoundCanRead, Mux(isScratchCfg, scratchCfgCanRead, !isScratchBound || scratchCfgCanRead))
+  )
   io.wAllowed := Mux(isMemCfg,
     memCfgCanWrite,
-    Mux(isMemBound, memBoundCanWrite, Mux(isJmpCfg, jmpCfgCanWrite, false.B))
+    Mux(isMemBound, memBoundCanWrite, Mux(isJmpCfg, jmpCfgCanWrite, isScratchBound && scratchBoundCanWrite))
   )
 }
 
@@ -467,16 +506,18 @@ class DasicsBndMvCheckerIO(implicit p: Parameters) extends XSBundle with DasicsM
   val bndType: UInt = Input(UInt(12.W))
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
+  val scratchRwStatus: DasicsUntrustedRwStatus = Input(new DasicsUntrustedRwStatus)
   val allowed: Bool = Output(Bool())
-  val isMem, isJmp = Output(Bool())
+  val destIsMem, destIsJmp, destIsScratch = Output(Bool())
 
-  def connectIn(src: UInt, dest: UInt, bndType: UInt,
-                memRwStatus: Vec[DasicsUntrustedRwStatus], jmpRwStatus: Vec[DasicsUntrustedRwStatus]): Unit = {
+  def connectIn(src: UInt, dest: UInt, bndType: UInt, memRwStatus: Vec[DasicsUntrustedRwStatus],
+                jmpRwStatus: Vec[DasicsUntrustedRwStatus], scratchRwStatus: DasicsUntrustedRwStatus): Unit = {
     this.src := src
     this.dest := dest
     this.bndType := bndType
     this.memRwStatus := memRwStatus
     this.jmpRwStatus := jmpRwStatus
+    this.scratchRwStatus := scratchRwStatus
   }
 }
 
@@ -488,19 +529,25 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
   val isJmp: Bool = io.bndType === DasicsBndMvType.jmp
   val unknownType: Bool = !(isMem || isJmp)
   val memOutOfBounds: Bool = (io.src >= NumDasicsMemBounds.U) || (io.dest >= NumDasicsMemBounds.U)
-  val jmpOutOfBounds: Bool = (io.src >= NumDasicsJumpBounds.U) || (io.dest >= NumDasicsJumpBounds.U)
+  val jmpOutOfBounds: Bool = ((io.src >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex)) ||
+    ((io.dest >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex))
   val memSrcStatus = io.memRwStatus(io.src(3,0))
   val memDestStatus = io.memRwStatus(io.dest(3,0))
   val jmpSrcStatus = io.jmpRwStatus(io.src(1,0))
   val jmpDestStatus = io.jmpRwStatus(io.dest(1,0))
   val memCanAccess = (memSrcStatus.isRO || memSrcStatus.isRW) && (memDestStatus.isRW || memDestStatus.isEmpty)
-  val jmpCanAccess = (jmpSrcStatus.isRO || jmpSrcStatus.isRW) && (jmpSrcStatus.isRW || jmpDestStatus.isEmpty)
+  val srcIsScratch = isJmp && (io.src === DasicsScratchpadIndex)
+  val jmpSrcCanRead = Mux(srcIsScratch, io.scratchRwStatus.isRW, jmpSrcStatus.isRO || jmpSrcStatus.isRW)
+  val destIsScratch = isJmp && (io.dest === DasicsScratchpadIndex)
+  val jmpDestCanAccess = (jmpDestStatus.isRW || jmpDestStatus.isEmpty) || destIsScratch
+  val jmpCanAccess = jmpSrcCanRead && jmpDestCanAccess
 
   io.allowed := !unknownType && (
     (isMem && !memOutOfBounds && memCanAccess) || (isJmp && !jmpOutOfBounds && jmpCanAccess)
     )
-  io.isMem := isMem
-  io.isJmp := isJmp
+  io.destIsMem := isMem
+  io.destIsJmp := isJmp && !destIsScratch
+  io.destIsScratch := destIsScratch
 }
 
 class DasicsBndQueryIO(implicit p: Parameters) extends XSBundle with DasicsConst {
@@ -974,6 +1021,19 @@ object DasicsRegMap {
         when (bndLoWen_reg) { r := MaskData(r, wdata_reg.boundLo, wm) }
         when (bndHiWen_reg) { r := MaskData(r, wdata_reg.boundHi, wm) }
       }
+    }
+  }
+
+  def scratchMvGenerate(cfgReg: UInt, bndLoReg: UInt, bndHiReg: UInt, levelReg: UInt,
+                        wen: Bool, wdata: DasicsJumpEntry, wlevel: UInt): Unit = {
+    val wdata_reg = RegEnable(wdata, wen)
+    val wlevel_reg = RegEnable(wlevel, wen)
+    val wen_reg = RegNext(wen)
+    when (wen_reg) {
+      cfgReg := wdata_reg.cfg.asUInt
+      bndLoReg := wdata_reg.boundLo
+      bndHiReg := wdata_reg.boundHi
+      levelReg := wlevel_reg
     }
   }
 }
