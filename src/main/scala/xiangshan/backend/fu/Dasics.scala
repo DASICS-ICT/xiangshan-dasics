@@ -401,6 +401,7 @@ class DasicsUntrustedRwCorrectorIO(implicit p: Parameters) extends XSBundle with
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
   val rMask: UInt = Output(UInt(XLEN.W))
+  val wMask: UInt = Output(UInt(XLEN.W))
   val rAllowed: Bool = Output(Bool())
   val wAllowed: Bool = Output(Bool())
 
@@ -435,8 +436,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   ).asUInt
   val memCfgWBlockMask: UInt = VecInit(memRwStatus.map(_.isRW).map(Fill(DasicsMemConfig.getWidth, _))).asUInt
   val memCfgMerged: UInt = VecInit(io.memEntries.map(_.cfg)).asUInt
-  val memCfgWMask: UInt = memCfgWBlockMask & memCfgMerged
-  val memCfgCanWrite: Bool = !(io.wdata & (~memCfgWMask).asUInt).orR
+  val memCfgCanWrite: Bool = !(io.wdata & (~memCfgMerged).asUInt).orR
   val memBoundPairStatus: DasicsUntrustedRwStatus = memRwStatus(memBoundOffset(4, 1))
   val memBoundCanRead: Bool = memBoundPairStatus.isRW || memBoundPairStatus.isRO
   val memBoundShrink: Bool = Mux(memBoundOffset(0), io.wdata <= memEntry.boundHi, io.wdata >= memEntry.boundLo)
@@ -445,8 +445,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   val jmpCfgRMask: UInt = VecInit(jmpRwStatus.map(status => status.isRO || status.isRW).map(Fill(16, _))).asUInt
   val jmpCfgWBlockMask: UInt = VecInit(jmpRwStatus.map(_.isRW).map(Fill(16, _))).asUInt
   val jmpCfgMerged: UInt = VecInit(io.jmpEntries.map(_.cfg.asUInt).map(ZeroExt(_, 16))).asUInt
-  val jmpCfgWMask: UInt = jmpCfgWBlockMask & jmpCfgMerged
-  val jmpCfgCanWrite: Bool = !(io.wdata & (~jmpCfgWMask).asUInt).orR
+  val jmpCfgCanWrite: Bool = !(io.wdata & (~jmpCfgMerged).asUInt).orR
   val jmpBoundPairStatus: DasicsUntrustedRwStatus = jmpRwStatus(jmpBoundOffset(2, 1))
   val jmpBoundCanRead: Bool = jmpBoundPairStatus.isRO || jmpBoundPairStatus.isRW
 
@@ -454,6 +453,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   io.jmpRwStatus := jmpRwStatus
 
   io.rMask := Mux(isMemCfg, memCfgRMask, Mux(isJmpCfg, jmpCfgRMask, Fill(XLEN, 1.U(1.W))))
+  io.wMask := Mux(isMemCfg, memCfgWBlockMask, Mux(isJmpCfg, jmpCfgWBlockMask, Fill(XLEN, 1.U(1.W))))
   io.rAllowed := Mux(isMemBound, memBoundCanRead, Mux(isJmpBound, jmpBoundCanRead, true.B))
   // TODO: jump bounds can only be edited in scratchpad
   io.wAllowed := Mux(isMemCfg,
@@ -489,10 +489,10 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
   val unknownType: Bool = !(isMem || isJmp)
   val memOutOfBounds: Bool = (io.src >= NumDasicsMemBounds.U) || (io.dest >= NumDasicsMemBounds.U)
   val jmpOutOfBounds: Bool = (io.src >= NumDasicsJumpBounds.U) || (io.dest >= NumDasicsJumpBounds.U)
-  val memSrcStatus = io.memRwStatus(io.src)
-  val memDestStatus = io.memRwStatus(io.dest)
-  val jmpSrcStatus = io.jmpRwStatus(io.src)
-  val jmpDestStatus = io.jmpRwStatus(io.dest)
+  val memSrcStatus = io.memRwStatus(io.src(3,0))
+  val memDestStatus = io.memRwStatus(io.dest(3,0))
+  val jmpSrcStatus = io.jmpRwStatus(io.src(1,0))
+  val jmpDestStatus = io.jmpRwStatus(io.dest(1,0))
   val memCanAccess = (memSrcStatus.isRO || memSrcStatus.isRW) && (memDestStatus.isRW || memDestStatus.isEmpty)
   val jmpCanAccess = (jmpSrcStatus.isRO || jmpSrcStatus.isRW) && (jmpSrcStatus.isRW || jmpDestStatus.isEmpty)
 
@@ -911,6 +911,42 @@ object DasicsRegMap {
     chiselMapping.foreach { case (a, r) =>
       val wen_reg = RegNext(wen && ((waddr === a) || clear))
       when (wen_reg) { r := Mux(clear_reg, 0.U, wdata_reg) }
+    }
+  }
+
+  def memBoundsGenerate(mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)], cfgAddr: UInt,
+                        bndLoAddr: UInt, wen: Bool, wdata: DasicsEntry, cfgData: UInt, cfgMask: UInt): Unit = {
+    val chiselMapping = mapping.map { case (a, (r, wm, _, _, _)) => (a.U, r, wm) }
+    val wdata_reg = RegEnable(wdata, wen)
+    val cfgData_reg = RegEnable(cfgData, wen)
+    val cfgMask_reg = RegEnable(cfgMask, wen)
+    chiselMapping.foreach { case (a, r, wm) =>
+      if (wm != MaskedRegMap.UnwritableMask) {
+        val cfgWen_reg = RegNext(wen && cfgAddr === a)
+        val bndLoWen_reg = RegNext(wen && bndLoAddr === a)
+        val bndHiWen_reg = RegNext(wen && ((bndLoAddr | 1.U) === a))
+        when (cfgWen_reg) { r := MaskData(r, cfgData_reg, cfgMask_reg) }
+        when (bndLoWen_reg) { r := MaskData(r, wdata_reg.boundLo, wm) }
+        when (bndHiWen_reg) { r := MaskData(r, wdata_reg.boundHi, wm) }
+      }
+    }
+  }
+
+  def jmpBoundsGenerate(mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)], cfgAddr: UInt,
+                        bndLoAddr: UInt, wen: Bool, wdata: DasicsJumpEntry, cfgData: UInt, cfgMask: UInt): Unit = {
+    val chiselMapping = mapping.map { case (a, (r, wm, _, _, _)) => (a.U, r, wm) }
+    val wdata_reg = RegEnable(wdata, wen)
+    val cfgData_reg = RegEnable(cfgData, wen)
+    val cfgMask_reg = RegEnable(cfgMask, wen)
+    chiselMapping.foreach { case (a, r, wm) =>
+      if (wm != MaskedRegMap.UnwritableMask) {
+        val cfgWen_reg = RegNext(wen && cfgAddr === a)
+        val bndLoWen_reg = RegNext(wen && bndLoAddr === a)
+        val bndHiWen_reg = RegNext(wen && ((bndLoAddr | 1.U) === a))
+        when (cfgWen_reg) { r := MaskData(r, cfgData_reg, cfgMask_reg) }
+        when (bndLoWen_reg) { r := MaskData(r, wdata_reg.boundLo, wm) }
+        when (bndHiWen_reg) { r := MaskData(r, wdata_reg.boundHi, wm) }
+      }
     }
   }
 }

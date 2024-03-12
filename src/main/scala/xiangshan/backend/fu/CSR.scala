@@ -818,7 +818,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     !addrInDasics || dasicsPermitted
     )
 
-  MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
+  // Dasics Cfg needs writemask
+  val writeMask = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.wMask, Fill(XLEN, 1.U(1.W)))
+  MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata & writeMask)
   val readMask: UInt = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.rMask, Fill(XLEN, 1.U(1.W)))
   io.out.bits.data := rdata & readMask
   io.out.bits.uop := io.in.bits.uop
@@ -877,6 +879,26 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   )
   DasicsRegMap.levelGenerate(
     dasicsJumpLevelMapping, dasicsJmpLevelWaddr, dasicsJmpLevelWen, dasicsJmpLevelWdata, dasicsJmpLevelClear
+  )
+
+  val dasicsBMWen = dasicsBndMv && dasicsBMpermitted
+  val dasicsMemSrc = dasics_mem(src1(3,0))
+  val dasicsMemCfgAddr = DasicsLibCfgBase.U
+  val dasicsMemBndLoAddr = DasicsLibBoundBase.U + Cat(src1(3,0), 0.U(1.W))
+  val dasicsMemCfgWMask = ZeroExt(("b1111".U << Cat(src1(3,0), 0.U(2.W))).asUInt, XLEN)
+  val dasicsMemCfgWData = ZeroExt((dasicsMemSrc.cfg.asUInt << Cat(src1(3,0), 0.U(2.W))).asUInt, XLEN)
+  DasicsRegMap.memBoundsGenerate(
+    dasicsMemMapping, dasicsMemCfgAddr, dasicsMemBndLoAddr,
+    wen = dasicsBMWen, wdata = dasicsMemSrc, cfgData = dasicsMemCfgWData, cfgMask = dasicsMemCfgWMask
+  )
+  val dasicsJmpSrc = dasics_jump(src1(1,0))
+  val dasicsJmpCfgAddr = DasicsJmpCfgBase.U
+  val dasicsJmpBndLoAddr = DasicsJmpBoundBase.U + Cat(src1(1,0), 0.U(1.W))
+  val dasicsJmpCfgWMask = ZeroExt((Fill(16, 1.U(1.W)) << Cat(src1(1,0), 0.U(4.W))).asUInt, XLEN)
+  val dasicsJmpCfgWData = ZeroExt((dasicsJmpSrc.cfg.asUInt << Cat(src1(1,0), 0.U(4.W))).asUInt, XLEN)
+  DasicsRegMap.jmpBoundsGenerate(
+    dasicsJumpMapping, dasicsJmpCfgAddr, dasicsJmpBndLoAddr, wen = dasicsBMWen, wdata = dasicsJmpSrc,
+    cfgData = dasicsJmpCfgWData, cfgMask = dasicsJmpCfgWMask
   )
 
   csrio.customCtrl.distribute_csr.dasicsMemLevel.valid := dasicsMemLevelWen
