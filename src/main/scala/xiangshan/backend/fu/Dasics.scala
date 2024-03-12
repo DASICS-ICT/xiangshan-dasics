@@ -19,7 +19,7 @@ trait DasicsConst {
   val DasicsMaxLevel = 4
   val DasicsLevelBit: Int = log2Ceil(DasicsMaxLevel)
   // scratchpad: a DasicsJumpEntry for editing
-  val DasicsScratchpadIndex: UInt = 31.U
+  val DasicsScratchpadIndex = 31
 }
 
 object DasicsConst extends DasicsConst
@@ -317,6 +317,9 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
       csrAddrInDasicsScratchCfg(addr, scratchCfg) || csrAddrInDasicsScratchBound(addr, scratchBoundBase)
   }
 
+  def csrAddrInDasicsRetPc(addr: UInt, retPcBase: Int): Bool =
+    (addr >> DasicsLevelBit).asUInt === (retPcBase >> DasicsLevelBit).U
+
   def getDasicsUntrustedMemRwStatus(level: UInt, memEntries: Vec[DasicsEntry]): Vec[DasicsUntrustedRwStatus] =
     VecInit(memEntries.map { entry =>
       val durs = Wire(new DasicsUntrustedRwStatus)
@@ -529,16 +532,16 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
   val isJmp: Bool = io.bndType === DasicsBndMvType.jmp
   val unknownType: Bool = !(isMem || isJmp)
   val memOutOfBounds: Bool = (io.src >= NumDasicsMemBounds.U) || (io.dest >= NumDasicsMemBounds.U)
-  val jmpOutOfBounds: Bool = ((io.src >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex)) ||
-    ((io.dest >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex))
+  val jmpOutOfBounds: Bool = ((io.src >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex.U)) ||
+    ((io.dest >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex.U))
   val memSrcStatus = io.memRwStatus(io.src(3,0))
   val memDestStatus = io.memRwStatus(io.dest(3,0))
   val jmpSrcStatus = io.jmpRwStatus(io.src(1,0))
   val jmpDestStatus = io.jmpRwStatus(io.dest(1,0))
   val memCanAccess = (memSrcStatus.isRO || memSrcStatus.isRW) && (memDestStatus.isRW || memDestStatus.isEmpty)
-  val srcIsScratch = isJmp && (io.src === DasicsScratchpadIndex)
+  val srcIsScratch = isJmp && (io.src === DasicsScratchpadIndex.U)
   val jmpSrcCanRead = Mux(srcIsScratch, io.scratchRwStatus.isRW, jmpSrcStatus.isRO || jmpSrcStatus.isRW)
-  val destIsScratch = isJmp && (io.dest === DasicsScratchpadIndex)
+  val destIsScratch = isJmp && (io.dest === DasicsScratchpadIndex.U)
   val jmpDestCanAccess = (jmpDestStatus.isRW || jmpDestStatus.isEmpty) || destIsScratch
   val jmpCanAccess = jmpSrcCanRead && jmpDestCanAccess
 
@@ -754,9 +757,9 @@ class DasicsMainBoundBundle(implicit p: Parameters) extends XSBundle {
   val uMainBound: DasicsMainBound = new DasicsMainBound()
 }
 
-class DasicsControlFlowBundle(implicit p: Parameters) extends XSBundle {
+class DasicsControlFlowBundle(implicit p: Parameters) extends XSBundle with DasicsConst {
   val dasics_main_call: UInt = UInt(XLEN.W)
-  val dasics_return_pc: UInt = UInt(XLEN.W)
+  val dasics_return_pc: Vec[UInt] = Vec(DasicsMaxLevel, UInt(XLEN.W))
   val dasics_azone_return_pc: UInt = UInt(XLEN.W)
 }
 
@@ -784,11 +787,13 @@ class DasicsFrontend(implicit p: Parameters) extends XSModule with DasicsMethod 
   private val uMainBoundHi = RegInit(0.U(XLEN.W))
   private val uMainBoundLo = RegInit(0.U(XLEN.W))
   private val dasics_main_call = RegInit(0.U(XLEN.W))
-  private val dasics_return_pc = RegInit(0.U(XLEN.W))
+  private val dasics_return_pc = RegInit(0.U.asTypeOf(Vec(DasicsMaxLevel, UInt(XLEN.W))))
   private val dasics_azone_return_pc = RegInit(0.U(XLEN.W))
-  private val control_flow_mapping = Map(
+  val returnPcMapping = Map(
+    (0 until DasicsMaxLevel).map(i => MaskedRegMap(DasicsReturnPcBase + i, dasics_return_pc(i))) : _*
+  )
+  private val control_flow_mapping = returnPcMapping ++ Map(
     MaskedRegMap(DasicsMainCall, dasics_main_call),
-    MaskedRegMap(DasicsReturnPc, dasics_return_pc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
     MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
@@ -866,7 +871,8 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
 
   private val s2_targetOutOfActive = dasics_jump_check(s2_target, s2_brLevel, dasics)
   private val s2_illegalBranch = s2_valid && s2_brUntrusted && s2_targetOutOfActive &&
-    (s2_target =/= dasics_return_pc) && (s2_target =/= dasics_main_call) && (s2_target =/= dasics_azone_return_pc)
+    (s2_target =/= dasics_return_pc(s2_brLevel)) && (s2_target =/= dasics_main_call) &&
+    (s2_target =/= dasics_azone_return_pc)
   io.s2_resp.dasics_fault := Mux(
     s2_illegalBranch,
     Mux(io.mode === ModeU, DasicsCheckFault.UJumpDasicsFault, DasicsCheckFault.SJumpDasicsFault),

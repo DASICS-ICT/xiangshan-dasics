@@ -81,8 +81,8 @@ trait HasCSRConst {
   val DasicsLibBoundBase = 0x890
 
   val DasicsMainCall  = 0x8b0
-  val DasicsReturnPc  = 0x8b1
   val DasicsActiveZoneReturnPC = 0x8b2
+  val DasicsReturnPcBase  = 0x8b4
 
   val DasicsJmpCfgBase = 0x8c8
   val DasicsJmpBoundBase = 0x8c0

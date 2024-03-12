@@ -341,8 +341,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
 
+  val dasicsReturnPc = RegInit(0.U.asTypeOf(Vec(DasicsMaxLevel, UInt(XLEN.W))))
   val dasicsMainCall: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsAZoneReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsScratchCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsScratchBoundLo, dasicsScratchBoundHi = RegInit(UInt(XLEN.W), 0.U)
@@ -359,8 +359,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     jump_init = dasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase,
     jumpEntries = dasics_jump
   )
+  val dasicsReturnPcMapping = Map(
+    (0 until DasicsMaxLevel).map(i => MaskedRegMap(DasicsReturnPcBase + i, dasicsReturnPc(i))) : _*
+  )
   val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsMemMapping ++
-    dasicsJumpMapping ++ Map(
+    dasicsJumpMapping ++ dasicsReturnPcMapping ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
@@ -368,7 +371,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
     MaskedRegMap(DasicsMainCall, dasicsMainCall),
-    MaskedRegMap(DasicsReturnPc, dasicsReturnPc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasicsAZoneReturnPc),
     MaskedRegMap(DasicsScratchCfg, dasicsScratchCfg, wmask = dasicsScratchCfgMask, rmask = dasicsScratchCfgMask),
     MaskedRegMap(DasicsScratchBase, dasicsScratchBoundLo),
@@ -793,6 +795,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     addr, DasicsLibCfgBase, DasicsLibBoundBase, DasicsJmpCfgBase, DasicsJmpBoundBase,
     DasicsScratchCfg, DasicsScratchBase
   )
+  // level may overflow
+  val dasicsLevelOv = (dasicsLevel === (~0.U(DasicsLevelBit.W)).asUInt) && isUntrusted
+  val dasicsNextLevel = dasicsLevel + 1.U
+  val addrInDasicsRetPc = csrAddrInDasicsRetPc(addr, DasicsReturnPcBase)
+  val dasicsRetPcPermitted = !dasicsLevelOv && (addr(DasicsLevelBit-1, 0) === dasicsNextLevel)
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) ||
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
     (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneReturnPC.U) ||
@@ -822,7 +829,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
   val dasicsUntrustedPermitted: Bool = dasicsURC.io.rAllowed && (attemptRo || dasicsURC.io.wAllowed)
   val dasicsPermitted: Bool = !(
-    isUntrusted && CSROpType.needAccess(func) && !(addrInUntrustedSpace && dasicsUntrustedPermitted)
+    isUntrusted && CSROpType.needAccess(func) && !(addrInUntrustedSpace && dasicsUntrustedPermitted) &&
+      !(addrInDasicsRetPc && dasicsRetPcPermitted)
     )
   val permitted: Bool = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && (
     !addrInDasics || dasicsPermitted
@@ -872,8 +880,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // Set DASICS level when untrusted code try to copy
   val dasicsBndMv = valid && func === CSROpType.di_mv
-  val dasicsLevelOv = (dasicsLevel === (~0.U(DasicsLevelBit.W)).asUInt) && dasicsBndMv && isUntrusted
-  val dasicsNextLevel = dasicsLevel + 1.U
 
   val dasicsBMC: DasicsBndMvChecker = Module(new DasicsBndMvChecker())
   dasicsBMC.io.connectIn(
@@ -1515,7 +1521,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.dumbound0 := dasicsUMainBoundLo
     difftest.io.dumbound1 := dasicsUMainBoundHi
     difftest.io.dmaincall := dasicsMainCall
-    difftest.io.dretpc := dasicsReturnPc
+    difftest.io.dretpc := dasicsReturnPc(0)
     difftest.io.dretpcfz := dasicsAZoneReturnPc
     difftest.io.upkru := upkru
     difftest.io.spkrs := spkrs
