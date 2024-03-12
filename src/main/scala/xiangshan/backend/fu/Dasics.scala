@@ -464,7 +464,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
 
 class DasicsBndMvCheckerIO(implicit p: Parameters) extends XSBundle with DasicsMethod {
   val src, dest = Input(UInt(XLEN.W))
-  val bndType: UInt = Input(UInt(5.W))
+  val bndType: UInt = Input(UInt(12.W))
   val memRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
   val allowed: Bool = Output(Bool())
@@ -501,6 +501,25 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
     )
   io.isMem := isMem
   io.isJmp := isJmp
+}
+
+class DasicsBndQueryIO(implicit p: Parameters) extends XSBundle with DasicsConst {
+  val memStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsMemBounds, new DasicsUntrustedRwStatus))
+  val jmpStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
+  val bndType: UInt = Input(UInt(12.W))
+  val out: UInt = Output(UInt(XLEN.W))
+}
+
+class DasicsBndQuery(implicit p: Parameters) extends XSModule with DasicsMethod {
+  val io = IO(new DasicsBndQueryIO())
+
+  val memResult = ZeroExt(io.memStatus.asUInt, XLEN)
+  val jmpResult = ZeroExt(io.jmpStatus.asUInt, XLEN)
+
+  io.out := LookupTreeDefault(io.bndType, 0.U, List(
+    DasicsBndMvType.mem -> memResult,
+    DasicsBndMvType.jmp -> jmpResult
+  ))
 }
 
 class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with HasCSRConst {

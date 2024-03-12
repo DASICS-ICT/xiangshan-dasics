@@ -200,7 +200,9 @@ package object xiangshan {
     def seti = "b0110".U
     def clri = "b0111".U
     def di_mv = "b1000".U // DASICS Bound Move
+    def di_qr = "b1100".U // DASICS Bound Query
     def needAccess(op: UInt): Bool = op(1, 0) =/= 0.U
+    def isDasics(op: UInt): Bool = op(3) === 1.U
   }
 
   // jump

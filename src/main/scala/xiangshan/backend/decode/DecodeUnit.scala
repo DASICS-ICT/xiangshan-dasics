@@ -393,7 +393,9 @@ object NDecode extends DecodeConstants {
 object DasicsDecode extends DecodeConstants {
   val table: Array[(BitPat, List[BitPat])] = Array(
     DASICSCALL_J -> List(SrcType.pc, SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_j, Y, N, N, Y, Y, N, SelImm.IMM_DIJ),
-    DASICSCALL_JR-> List(SrcType.reg,SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_jr,Y, N, N, Y, Y, N, SelImm.IMM_I)
+    DASICSCALL_JR-> List(SrcType.reg,SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_jr,Y, N, N, Y, Y, N, SelImm.IMM_I),
+    DI_BNDMV     -> List(SrcType.reg,SrcType.reg, SrcType.X, FuType.csr, CSROpType.di_mv,         N, N, N, Y, Y, N, SelImm.IMM_S),
+    DI_BNDQUERY  -> List(SrcType.X,  SrcType.imm, SrcType.X, FuType.csr, CSROpType.di_qr,         Y, N, N, N, N, N, SelImm.IMM_I)
   )
 }
 

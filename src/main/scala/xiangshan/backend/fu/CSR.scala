@@ -120,7 +120,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   cfOut := cfIn
   val flushPipe = Wire(Bool())
 
-  val (valid, rs1, src1, src2, dasicsDest, func, isUntrusted, dasicsLevel, dasicsMvType) = (
+  val (valid, rs1, src1, src2, dasicsDest, func, isUntrusted, dasicsLevel) = (
     io.in.valid,
     io.in.bits.uop.ctrl.lsrc(0),
     io.in.bits.src(0),
@@ -128,8 +128,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     io.in.bits.src(1),
     io.in.bits.uop.ctrl.fuOpType,
     io.in.bits.uop.dasicsUntrusted,
-    io.in.bits.uop.dasicsLevel,
-    io.in.bits.uop.ctrl.ldest
+    io.in.bits.uop.dasicsLevel
   )
 
   // CSR define
@@ -774,7 +773,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     (addr >= Mcountinhibit.U) && (addr <= Mhpmevent31.U) ||
     (addr >= Cycle.U) && (addr <= Hpmcounter31.U) ||
     addr === Mip.U
-  csrio.isPerfCnt := addrInPerfCnt && valid && (func =/= CSROpType.jmp) && (func =/= CSROpType.di_mv)
+  csrio.isPerfCnt := addrInPerfCnt && valid && (func =/= CSROpType.jmp) && !CSROpType.isDasics(func)
 
   val dasicsURC: DasicsUntrustedRwCorrector = Module(new DasicsUntrustedRwCorrector)
   dasicsURC.io.connectIn(
@@ -799,7 +798,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.disableSfence := tvmNotPermit
 
   // general CSR wen check
-  val wen: Bool = valid && (func =/= CSROpType.jmp) && (func =/= CSROpType.di_mv) && (addr=/=Satp.U || satpLegalMode)
+  val wen: Bool = valid && (func =/= CSROpType.jmp) && !CSROpType.isDasics(func) && (addr=/=Satp.U || satpLegalMode)
   val attemptRo: Bool = LookupTreeDefault(func, false.B, List(
     CSROpType.set   -> (rs1 === 0.U),
     CSROpType.clr   -> (rs1 === 0.U),
@@ -818,11 +817,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     !addrInDasics || dasicsPermitted
     )
 
+  val dasicsBndQuery: DasicsBndQuery = Module(new DasicsBndQuery)
+  dasicsBndQuery.io.bndType := src2
+  dasicsBndQuery.io.memStatus := dasicsURC.io.memRwStatus
+  dasicsBndQuery.io.jmpStatus := dasicsURC.io.jmpRwStatus
+
   // Dasics Cfg needs writemask
   val writeMask = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.wMask, Fill(XLEN, 1.U(1.W)))
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata & writeMask)
   val readMask: UInt = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.rMask, Fill(XLEN, 1.U(1.W)))
-  io.out.bits.data := rdata & readMask
+  io.out.bits.data := Mux(func === CSROpType.di_qr, dasicsBndQuery.io.out, rdata & readMask)
   io.out.bits.uop := io.in.bits.uop
   io.out.bits.uop.cf := cfOut
   io.out.bits.uop.ctrl.flushPipe := flushPipe
@@ -862,7 +866,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   val dasicsBMC: DasicsBndMvChecker = Module(new DasicsBndMvChecker())
   dasicsBMC.io.connectIn(
-    src = src1, dest = dasicsDest, bndType = dasicsMvType,
+    src = src1, dest = dasicsDest, bndType = src2,
     memRwStatus = dasicsURC.io.memRwStatus, jmpRwStatus = dasicsURC.io.jmpRwStatus
   )
   val dasicsBMpermitted = !isUntrusted || (!dasicsLevelOv && dasicsBMC.io.allowed)
@@ -900,6 +904,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     dasicsJumpMapping, dasicsJmpCfgAddr, dasicsJmpBndLoAddr, wen = dasicsBMWen, wdata = dasicsJmpSrc,
     cfgData = dasicsJmpCfgWData, cfgMask = dasicsJmpCfgWMask
   )
+  val isIllegalDasicsBM = dasicsBndMv && isUntrusted && !dasicsBMpermitted
 
   csrio.customCtrl.distribute_csr.dasicsMemLevel.valid := dasicsMemLevelWen
   csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.addr := dasicsMemLevelWaddr
@@ -1102,7 +1107,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
   // * csr access is illegal
-  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp
+  csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp || isIllegalDasicsBM
   cfOut.exceptionVec := csrExceptionVec
 
   XSDebug(io.in.valid, s"Debug Mode: an Ebreak is executed, ebreak cause enter-debug-mode exception ? ${raiseDebugException}\n")
