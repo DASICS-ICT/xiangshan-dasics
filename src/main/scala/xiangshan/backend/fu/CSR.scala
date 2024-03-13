@@ -842,8 +842,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   dasicsBndQuery.io.jmpStatus := dasicsURC.io.jmpRwStatus
 
   // Dasics Cfg needs writemask
-  val writeMask = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.wMask, Fill(XLEN, 1.U(1.W)))
-  MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata & writeMask)
+  val wdataFinal = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.wdataFinal, wdata)
+  MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdataFinal)
   val readMask: UInt = Mux(isUntrusted && addrInUntrustedSpace, dasicsURC.io.rMask, Fill(XLEN, 1.U(1.W)))
   io.out.bits.data := Mux(func === CSROpType.di_qr, dasicsBndQuery.io.out, rdata & readMask)
   io.out.bits.uop := io.in.bits.uop
@@ -852,7 +852,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // send distribute csr a w signal
   csrio.customCtrl.distribute_csr.w.valid := wen && permitted
-  csrio.customCtrl.distribute_csr.w.bits.data := wdata
+  csrio.customCtrl.distribute_csr.w.bits.data := wdataFinal
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
 
   csrio.customCtrl.mode := priviledgeMode
@@ -1008,7 +1008,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val isDret   = addr === privDret   && func === CSROpType.jmp
   val isWFI    = func === CSROpType.wfi
   
-  XSDebug(wen, "csr write: pc %x addr %x rdata %x wdata %x func %x\n", cfIn.pc, addr, rdata, wdata, func)
+  XSDebug(wen, "csr write: pc %x addr %x rdata %x wdata %x func %x\n", cfIn.pc, addr, rdata, wdataFinal, func)
   XSDebug(wen, "pc %x mstatus %x mideleg %x medeleg %x mode %x\n", cfIn.pc, mstatus, mideleg , medeleg, priviledgeMode)
 
   // Illegal priviledged operation list

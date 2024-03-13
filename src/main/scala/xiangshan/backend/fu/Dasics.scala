@@ -432,7 +432,7 @@ class DasicsUntrustedRwCorrectorIO(implicit p: Parameters) extends XSBundle with
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Output(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
   val scratchRwStatus: DasicsUntrustedRwStatus = Output(new DasicsUntrustedRwStatus)
   val rMask: UInt = Output(UInt(XLEN.W))
-  val wMask: UInt = Output(UInt(XLEN.W))
+  val wdataFinal: UInt = Output(UInt(XLEN.W))
   val rAllowed: Bool = Output(Bool())
   val wAllowed: Bool = Output(Bool())
 
@@ -471,6 +471,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   val memCfgWBlockMask: UInt = VecInit(memRwStatus.map(_.isRW).map(Fill(DasicsMemConfig.getWidth, _))).asUInt
   val memCfgMerged: UInt = VecInit(io.memEntries.map(_.cfg)).asUInt
   val memCfgCanWrite: Bool = !(io.wdata & (~memCfgMerged).asUInt).orR
+  val memCfgWdata = MaskData(memCfgMerged, io.wdata, memCfgWBlockMask)
   val memBoundPairStatus: DasicsUntrustedRwStatus = memRwStatus(memBoundOffset(4, 1))
   val memBoundCanRead: Bool = memBoundPairStatus.isRW || memBoundPairStatus.isRO
   val memBoundShrink: Bool = Mux(memBoundOffset(0), io.wdata <= memEntry.boundHi, io.wdata >= memEntry.boundLo)
@@ -480,6 +481,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   val jmpCfgWBlockMask: UInt = VecInit(jmpRwStatus.map(_.isRW).map(Fill(16, _))).asUInt
   val jmpCfgMerged: UInt = VecInit(io.jmpEntries.map(_.cfg.asUInt).map(ZeroExt(_, 16))).asUInt
   val jmpCfgCanWrite: Bool = !(io.wdata & (~jmpCfgMerged).asUInt).orR
+  val jmpCfgWdata = MaskData(jmpCfgMerged, io.wdata, jmpCfgWBlockMask)
   val jmpBoundPairStatus: DasicsUntrustedRwStatus = jmpRwStatus(jmpBoundOffset(2, 1))
   val jmpBoundCanRead: Bool = jmpBoundPairStatus.isRO || jmpBoundPairStatus.isRW
 
@@ -493,7 +495,7 @@ class DasicsUntrustedRwCorrector(implicit p: Parameters) extends XSModule with D
   io.scratchRwStatus := scratchRwStatus
 
   io.rMask := Mux(isMemCfg, memCfgRMask, Mux(isJmpCfg, jmpCfgRMask, Fill(XLEN, 1.U(1.W))))
-  io.wMask := Mux(isMemCfg, memCfgWBlockMask, Mux(isJmpCfg, jmpCfgWBlockMask, Fill(XLEN, 1.U(1.W))))
+  io.wdataFinal := Mux(isMemCfg, memCfgWdata, Mux(isJmpCfg, jmpCfgWdata, io.wdata))
   io.rAllowed := Mux(isMemBound,
     memBoundCanRead,
     Mux(isJmpBound, jmpBoundCanRead, Mux(isScratchCfg, scratchCfgCanRead, !isScratchBound || scratchCfgCanRead))
