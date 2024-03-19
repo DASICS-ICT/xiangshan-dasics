@@ -902,9 +902,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsMemBMWen = dasicsBMWen && dasicsBMC.io.destIsMem
   val dasicsMemSrc = dasics_mem(src1(3,0))
   val dasicsMemCfgAddr = DasicsLibCfgBase.U
-  val dasicsMemBndLoAddr = DasicsLibBoundBase.U + Cat(src1(3,0), 0.U(1.W))
-  val dasicsMemCfgWMask = ZeroExt(("b1111".U << Cat(src1(3,0), 0.U(2.W))).asUInt, XLEN)
-  val dasicsMemCfgWData = ZeroExt((dasicsMemSrc.cfg.asUInt << Cat(src1(3,0), 0.U(2.W))).asUInt, XLEN)
+  val dasicsMemBndLoAddr = DasicsLibBoundBase.U + Cat(dasicsDest(3,0), 0.U(1.W))
+  val dasicsMemCfgWMask = ZeroExt(("b1111".U << Cat(dasicsDest(3,0), 0.U(2.W))).asUInt, XLEN)
+  val dasicsMemCfgWData = ZeroExt((dasicsMemSrc.cfg.asUInt << Cat(dasicsDest(3,0), 0.U(2.W))).asUInt, XLEN)
   DasicsRegMap.memBoundsGenerate(
     dasicsMemMapping, dasicsMemCfgAddr, dasicsMemBndLoAddr,
     wen = dasicsMemBMWen, wdata = dasicsMemSrc, cfgData = dasicsMemCfgWData, cfgMask = dasicsMemCfgWMask
@@ -912,9 +912,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsJmpBMWen = dasicsBMWen && dasicsBMC.io.destIsJmp
   val dasicsJmpSrc = dasics_jump(src1(1,0))
   val dasicsJmpCfgAddr = DasicsJmpCfgBase.U
-  val dasicsJmpBndLoAddr = DasicsJmpBoundBase.U + Cat(src1(1,0), 0.U(1.W))
-  val dasicsJmpCfgWMask = ZeroExt((Fill(16, 1.U(1.W)) << Cat(src1(1,0), 0.U(4.W))).asUInt, XLEN)
-  val dasicsJmpCfgWData = ZeroExt((dasicsJmpSrc.cfg.asUInt << Cat(src1(1,0), 0.U(4.W))).asUInt, XLEN)
+  val dasicsJmpBndLoAddr = DasicsJmpBoundBase.U + Cat(dasicsDest(1,0), 0.U(1.W))
+  val dasicsJmpCfgWMask = ZeroExt((Fill(16, 1.U(1.W)) << Cat(dasicsDest(1,0), 0.U(4.W))).asUInt, XLEN)
+  val dasicsJmpCfgWData = ZeroExt((dasicsJmpSrc.cfg.asUInt << Cat(dasicsDest(1,0), 0.U(4.W))).asUInt, XLEN)
   DasicsRegMap.jmpBoundsGenerate(
     dasicsJumpMapping, dasicsJmpCfgAddr, dasicsJmpBndLoAddr, wen = dasicsJmpBMWen, wdata = dasicsJmpSrc,
     cfgData = dasicsJmpCfgWData, cfgMask = dasicsJmpCfgWMask
