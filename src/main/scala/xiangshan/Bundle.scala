@@ -557,7 +557,6 @@ class DistributedCSRIO(implicit p: Parameters) extends XSBundle {
 class DistributedDasicsLevel(implicit p: Parameters) extends XSBundle with DasicsConst {
   val addr: UInt = Output(UInt(log2Up(NumDasicsMemBounds).W))
   val data: UInt = Output(UInt(DasicsLevelBit.W))
-  val clear: Bool = Output(Bool())
 }
 
 class DistributedDasicsMem(implicit p: Parameters) extends XSBundle{

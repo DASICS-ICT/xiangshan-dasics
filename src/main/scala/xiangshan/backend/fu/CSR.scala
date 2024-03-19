@@ -874,10 +874,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   ))
   MaskedRegMap.generate(fixMapping, addr, rdataFix, wen && permitted, wdataFix)
 
-  // Clear DASICS level when trusted code write registers
-  val dasicsMemLevelClear: Bool = wen && csrAddrInDasicsMemCfg(addr, DasicsLibCfgBase) && !isUntrusted && !attemptRo
-  val dasicsJmpLevelClear: Bool = wen && csrAddrInDasicsJmpCfg(addr, DasicsJmpCfgBase) && !isUntrusted && !attemptRo
-
   // Set DASICS level when untrusted code try to copy
   val dasicsBndMv = valid && func === CSROpType.di_mv
 
@@ -889,17 +885,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsBMpermitted = !isUntrusted || (!dasicsLevelOv && dasicsBMC.io.allowed)
   val dasicsBMLevelWen = dasicsBndMv && isUntrusted && dasicsBMpermitted
 
-  val dasicsMemLevelWen = dasicsMemLevelClear || (dasicsBMLevelWen && dasicsBMC.io.destIsMem)
+  val dasicsMemLevelWen = dasicsBMLevelWen && dasicsBMC.io.destIsMem
   val dasicsMemLevelWaddr = dasicsDest
   val dasicsMemLevelWdata = dasicsNextLevel
-  val dasicsJmpLevelWen = dasicsJmpLevelClear || (dasicsBMLevelWen && dasicsBMC.io.destIsJmp)
+  val dasicsJmpLevelWen = dasicsBMLevelWen && dasicsBMC.io.destIsJmp
   val dasicsJmpLevelWaddr = dasicsDest
   val dasicsJmpLevelWdata = dasicsNextLevel
   DasicsRegMap.levelGenerate(
-    dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata, dasicsMemLevelClear
+    dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata
   )
   DasicsRegMap.levelGenerate(
-    dasicsJumpLevelMapping, dasicsJmpLevelWaddr, dasicsJmpLevelWen, dasicsJmpLevelWdata, dasicsJmpLevelClear
+    dasicsJumpLevelMapping, dasicsJmpLevelWaddr, dasicsJmpLevelWen, dasicsJmpLevelWdata
   )
 
   val dasicsBMWen = dasicsBndMv && dasicsBMpermitted
@@ -932,11 +928,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.customCtrl.distribute_csr.dasicsMemLevel.valid := dasicsMemLevelWen
   csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.addr := dasicsMemLevelWaddr
   csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.data := dasicsMemLevelWdata
-  csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.clear := dasicsMemLevelClear
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.valid := dasicsJmpLevelWen
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.addr := dasicsJmpLevelWaddr
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.data := dasicsJmpLevelWdata
-  csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.clear := dasicsJmpLevelClear
 
   csrio.customCtrl.distribute_csr.dasicsMemBounds.valid := dasicsMemBMWen
   csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.cfgAddr := dasicsMemCfgAddr

@@ -588,7 +588,7 @@ class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with 
 
   val rdata: UInt = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping, w.bits.addr, rdata, w.valid, w.bits.data)
-  DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data, levelW.bits.clear)
+  DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data)
   DasicsRegMap.memBoundsGenerate(
     mapping, bmw.bits.cfgAddr, bmw.bits.boundLoAddr, bmw.valid, bmw.bits.entry, bmw.bits.cfgData, bmw.bits.cfgMask
   )
@@ -806,7 +806,7 @@ class DasicsFrontend(implicit p: Parameters) extends XSModule with DasicsMethod 
   )
   private val rdata = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping ++ control_flow_mapping, w.bits.addr, rdata, w.valid, w.bits.data)
-  DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data, levelW.bits.clear)
+  DasicsRegMap.levelGenerate(levelMapping, levelW.bits.addr, levelW.valid, levelW.bits.data)
   DasicsRegMap.jmpBoundsGenerate(
     mapping, bmw.bits.cfgAddr, bmw.bits.boundLoAddr, bmw.valid, bmw.bits.entry, bmw.bits.cfgData, bmw.bits.cfgMask
   )
@@ -986,13 +986,12 @@ class DasicsTagger(implicit p: Parameters) extends XSModule with DasicsConst wit
 
 object DasicsRegMap {
   def levelGenerate(mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)],
-                    waddr: UInt, wen: Bool, wdata: UInt, clear: Bool): Unit = {
+                    waddr: UInt, wen: Bool, wdata: UInt): Unit = {
     val chiselMapping = mapping.map { case (a, (r, _, _, _, _)) => (a.U, r) }
     val wdata_reg = RegEnable(wdata, wen)
-    val clear_reg = RegEnable(clear, wen)
     chiselMapping.foreach { case (a, r) =>
-      val wen_reg = RegNext(wen && ((waddr === a) || clear))
-      when (wen_reg) { r := Mux(clear_reg, 0.U, wdata_reg) }
+      val wen_reg = RegNext(wen && ((waddr === a)))
+      when (wen_reg) { r := wdata_reg }
     }
   }
 
