@@ -513,7 +513,7 @@ class DasicsBndMvCheckerIO(implicit p: Parameters) extends XSBundle with DasicsM
   val jmpRwStatus: Vec[DasicsUntrustedRwStatus] = Input(Vec(NumDasicsJumpBounds, new DasicsUntrustedRwStatus))
   val scratchRwStatus: DasicsUntrustedRwStatus = Input(new DasicsUntrustedRwStatus)
   val allowed: Bool = Output(Bool())
-  val destIsMem, destIsJmp, destIsScratch = Output(Bool())
+  val destIsMem, destIsJmp, destIsScratch, srcIsScratch = Output(Bool())
 
   def connectIn(src: UInt, dest: UInt, bndType: UInt, memRwStatus: Vec[DasicsUntrustedRwStatus],
                 jmpRwStatus: Vec[DasicsUntrustedRwStatus], scratchRwStatus: DasicsUntrustedRwStatus): Unit = {
@@ -534,7 +534,7 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
   val isJmp: Bool = io.bndType === DasicsBndMvType.jmp
   val unknownType: Bool = !(isMem || isJmp)
   val memOutOfBounds: Bool = (io.src >= NumDasicsMemBounds.U) || (io.dest >= NumDasicsMemBounds.U)
-  val jmpOutOfBounds: Bool = ((io.src >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex.U)) ||
+  val jmpOutOfBounds: Bool = ((io.src >= NumDasicsJumpBounds.U) && (io.src =/= DasicsScratchpadIndex.U)) ||
     ((io.dest >= NumDasicsJumpBounds.U) && (io.dest =/= DasicsScratchpadIndex.U))
   val memSrcStatus = io.memRwStatus(io.src(3,0))
   val memDestStatus = io.memRwStatus(io.dest(3,0))
@@ -553,6 +553,7 @@ class DasicsBndMvChecker(implicit p: Parameters) extends XSModule with DasicsMet
   io.destIsMem := isMem
   io.destIsJmp := isJmp && !destIsScratch
   io.destIsScratch := destIsScratch
+  io.srcIsScratch := srcIsScratch
 }
 
 class DasicsBndQueryIO(implicit p: Parameters) extends XSBundle with DasicsConst {

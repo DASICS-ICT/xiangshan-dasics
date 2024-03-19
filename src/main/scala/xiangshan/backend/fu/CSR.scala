@@ -910,7 +910,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     wen = dasicsMemBMWen, wdata = dasicsMemSrc, cfgData = dasicsMemCfgWData, cfgMask = dasicsMemCfgWMask
   )
   val dasicsJmpBMWen = dasicsBMWen && dasicsBMC.io.destIsJmp
-  val dasicsJmpSrc = dasics_jump(src1(1,0))
+  val dasicsJmpSrc = Mux(dasicsBMC.io.srcIsScratch, dasics_scratch, dasics_jump(src1(1,0)))
   val dasicsJmpCfgAddr = DasicsJmpCfgBase.U
   val dasicsJmpBndLoAddr = DasicsJmpBoundBase.U + Cat(dasicsDest(1,0), 0.U(1.W))
   val dasicsJmpCfgWMask = ZeroExt((Fill(16, 1.U(1.W)) << Cat(dasicsDest(1,0), 0.U(4.W))).asUInt, XLEN)
