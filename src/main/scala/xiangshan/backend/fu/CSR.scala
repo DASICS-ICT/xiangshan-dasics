@@ -360,8 +360,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     jumpEntries = dasics_jump
   )
   // allow csrr to read dasics level; csrw logic is implemented at DasicsRegMap.levelGenerate
-  val dasicsMemLevelCsrr = VecInit(dasicsMemLevelMapping.map { case (_, (r, _, _, _, _)) => r }.toSeq).asUInt
-  val dasicsJumpLevelCsrr = VecInit(dasicsJumpLevelMapping.map { case (_, (r, _, _, _, _)) => r }.toSeq).asUInt
+  val dasicsMemLevelCsrr = VecInit((0 until NumDasicsMemBounds).map(i => dasicsMemLevelMapping.apply(i)._1)).asUInt
+  val dasicsJumpLevelCsrr = VecInit((0 until NumDasicsJumpBounds).map(i => dasicsJumpLevelMapping.apply(i)._1)).asUInt
   val dasicsReturnPcMapping = Map(
     (0 until DasicsMaxLevel).map(i => MaskedRegMap(DasicsReturnPcBase + i, dasicsReturnPc(i))) : _*
   )
