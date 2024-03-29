@@ -359,6 +359,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     jump_init = dasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase,
     jumpEntries = dasics_jump
   )
+  // allow csrr to read dasics level; csrw logic is implemented at DasicsRegMap.levelGenerate
+  val dasicsMemLevelCsrr = VecInit(dasicsMemLevelMapping.map { case (_, (r, _, _, _, _)) => r }.toSeq).asUInt
+  val dasicsJumpLevelCsrr = VecInit(dasicsJumpLevelMapping.map { case (_, (r, _, _, _, _)) => r }.toSeq).asUInt
   val dasicsReturnPcMapping = Map(
     (0 until DasicsMaxLevel).map(i => MaskedRegMap(DasicsReturnPcBase + i, dasicsReturnPc(i))) : _*
   )
@@ -372,6 +375,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
     MaskedRegMap(DasicsMainCall, dasicsMainCall),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasicsAZoneReturnPc),
+    MaskedRegMap(DasicsMemLevel, dasicsMemLevelCsrr, MaskedRegMap.UnwritableMask, MaskedRegMap.Unwritable),
+    MaskedRegMap(DasicsJmpLevel, dasicsJumpLevelCsrr, MaskedRegMap.UnwritableMask, MaskedRegMap.Unwritable),
     MaskedRegMap(DasicsScratchCfg, dasicsScratchCfg, wmask = dasicsScratchCfgMask, rmask = dasicsScratchCfgMask),
     MaskedRegMap(DasicsScratchBase, dasicsScratchBoundLo),
     MaskedRegMap(DasicsScratchBase + 1, dasicsScratchBoundHi)
@@ -888,14 +893,19 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsMemLevelWen = dasicsBMLevelWen && dasicsBMC.io.destIsMem
   val dasicsMemLevelWaddr = dasicsDest
   val dasicsMemLevelWdata = dasicsNextLevel
+  val dasicsMemLevelGlobalWen = valid && CSROpType.needAccess(func) && addr === DasicsMemLevel.U
   val dasicsJmpLevelWen = dasicsBMLevelWen && dasicsBMC.io.destIsJmp
   val dasicsJmpLevelWaddr = dasicsDest
   val dasicsJmpLevelWdata = dasicsNextLevel
+  val dasicsJmpLevelGlobalWen = valid && CSROpType.needAccess(func) && addr === DasicsJmpLevel.U
+  val dasicsLevelGlobalWdata = wdata
   DasicsRegMap.levelGenerate(
-    dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata
+    dasicsMemLevelMapping, dasicsMemLevelWaddr, dasicsMemLevelWen, dasicsMemLevelWdata,
+    dasicsMemLevelGlobalWen, dasicsLevelGlobalWdata
   )
   DasicsRegMap.levelGenerate(
-    dasicsJumpLevelMapping, dasicsJmpLevelWaddr, dasicsJmpLevelWen, dasicsJmpLevelWdata
+    dasicsJumpLevelMapping, dasicsJmpLevelWaddr, dasicsJmpLevelWen, dasicsJmpLevelWdata,
+    dasicsJmpLevelGlobalWen, dasicsLevelGlobalWdata
   )
 
   val dasicsBMWen = dasicsBndMv && dasicsBMpermitted
@@ -928,9 +938,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.customCtrl.distribute_csr.dasicsMemLevel.valid := dasicsMemLevelWen
   csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.addr := dasicsMemLevelWaddr
   csrio.customCtrl.distribute_csr.dasicsMemLevel.bits.data := dasicsMemLevelWdata
+  csrio.customCtrl.distribute_csr.dasicsMemLevelGlobal.valid := dasicsMemLevelGlobalWen
+  csrio.customCtrl.distribute_csr.dasicsMemLevelGlobal.bits := dasicsLevelGlobalWdata
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.valid := dasicsJmpLevelWen
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.addr := dasicsJmpLevelWaddr
   csrio.customCtrl.distribute_csr.dasicsJmpLevel.bits.data := dasicsJmpLevelWdata
+  csrio.customCtrl.distribute_csr.dasicsJmpLevelGlobal.valid := dasicsJmpLevelGlobalWen
+  csrio.customCtrl.distribute_csr.dasicsJmpLevelGlobal.bits := dasicsLevelGlobalWdata
 
   csrio.customCtrl.distribute_csr.dasicsMemBounds.valid := dasicsMemBMWen
   csrio.customCtrl.distribute_csr.dasicsMemBounds.bits.cfgAddr := dasicsMemCfgAddr
