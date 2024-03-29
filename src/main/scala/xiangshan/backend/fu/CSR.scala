@@ -1529,8 +1529,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.dumbound0 := dasicsUMainBoundLo
     difftest.io.dumbound1 := dasicsUMainBoundHi
     difftest.io.dmaincall := dasicsMainCall
-    difftest.io.dretpc := dasicsReturnPc(0)
     difftest.io.dretpcfz := dasicsAZoneReturnPc
+    difftest.io.dretpc0 := dasicsReturnPc(0)
+    difftest.io.dretpc1 := dasicsReturnPc(1)
+    difftest.io.dretpc2 := dasicsReturnPc(2)
+    difftest.io.dretpc3 := dasicsReturnPc(3)
+    difftest.io.dllevel := dasicsMemLevelCsrr
+    difftest.io.djlevel := dasicsJumpLevelCsrr
     difftest.io.upkru := upkru
     difftest.io.spkrs := spkrs
     difftest.io.spkctl := spkctl
