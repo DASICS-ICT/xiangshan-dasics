@@ -549,7 +549,7 @@ class DasicsMainBound(implicit p: Parameters) extends XSBundle with DasicsConst 
     val loBlockMask = (~maskGen << diffLoLSB)(numDasicsBlocks, 0).asBools
     val loCloseMask =
       (VecInit(loBlockMask.map(Fill(instPerDasicsBlock, _))).asUInt >> startOffset)(FetchWidth * 2 - 1, 0)
-    val hiBlockMask = (Cat(maskGen, ~maskGen) << diffHiLSB)(2 * numDasicsBlocks + 1, numDasicsBlocks + 1).asBools
+    val hiBlockMask = (~(Cat(~maskGen, maskGen) << diffHiLSB))(2 * numDasicsBlocks + 1, numDasicsBlocks + 1).asBools
     val hiCloseMask =
       (VecInit(hiBlockMask.map(Fill(instPerDasicsBlock, _))).asUInt >> startOffset)(FetchWidth * 2 - 1, 0)
 
