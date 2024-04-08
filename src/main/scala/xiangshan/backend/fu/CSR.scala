@@ -1108,7 +1108,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val regularExceptionVec = hasExceptionVec.take(16)
   val dasicsExceptionVec = ExceptionNO.selectDasics(hasExceptionVec)
   val mpkExceptionVec = ExceptionNO.selectMpk(hasExceptionVec)
-  val regularExceptionNO = ExceptionNO.priorities.foldRight(0.U)((i: Int, sum: UInt) => Mux(hasExceptionVec(i), i.U, sum))
+  val regularExceptionNO = ExceptionNO.prioritiesRegular.foldRight(0.U)((i: Int, sum: UInt) => Mux(regularExceptionVec(i), i.U, sum))
   val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + dasicsExcOffset).U, sum))
   val mpkExceptionNo = ExceptionNO.mpkSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(mpkExceptionVec(i), (i + mpkExcOffset).U, sum))
   
