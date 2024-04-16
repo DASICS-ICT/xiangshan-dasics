@@ -558,7 +558,7 @@ package object xiangshan {
     def pksLoadPageFault    = 34 - mpkExcOffset
     def pksStorePageFault   = 35 - mpkExcOffset
 
-    def priorities = Seq(
+    def prioritiesAll = Seq(
       // DASICS Instruction fault actually belongs to the last branch instr
       dasicsUIntrAccessFault,
       dasicsSIntrAccessFault,
@@ -585,7 +585,21 @@ package object xiangshan {
       pkuLoadPageFault,
       pkuStorePageFault
     )
-    def all = priorities.distinct.sorted
+    def prioritiesRegular = Seq(
+      breakPoint, // TODO: different BP has different priority
+      instrPageFault,
+      instrAccessFault,
+      illegalInstr,
+      instrAddrMisaligned,
+      ecallM, ecallS, ecallU,
+      storeAddrMisaligned,
+      loadAddrMisaligned,
+      storePageFault,
+      loadPageFault,
+      storeAccessFault,
+      loadAccessFault
+    )
+    def all = prioritiesAll.distinct.sorted
     def frontendSet = Seq(
       instrAddrMisaligned,
       instrAccessFault,

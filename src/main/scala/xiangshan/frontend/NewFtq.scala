@@ -740,8 +740,11 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
     startAddr + pcOffset
   }
   // process last branch regs
+  val lastBranchIfuReqFlush = WireInit(false.B)
   when (io.toIfu.req.fire) {
-    when (entry_ftq_offset.valid) { // there's a predicted branch
+    when(lastBranchIfuReqFlush){
+      lastBranchActiveReg := false.B
+    }.elsewhen (entry_ftq_offset.valid) { // there's a predicted branch
       lastBranchActiveReg := true.B
       lastBranchReg := getBranchPc(io.toIfu.req.bits.startAddr, entry_ftq_offset.bits)
     }.elsewhen (lastBranchActiveReg) {  // lastBranch is picked up, disable it
@@ -784,7 +787,8 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
     when (io.toIfu.req.fire && !ifu_req_should_be_flushed) {
       entry_fetch_status(ifuPtr.value) := f_sent
     }
-
+  
+  lastBranchIfuReqFlush := ifu_req_should_be_flushed 
   // *********************************************************************
   // **************************** wb from ifu ****************************
   // *********************************************************************
