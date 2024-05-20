@@ -321,10 +321,10 @@ class JumpDasics(implicit p: Parameters) extends XSModule
     MaskedRegMap(DasicsMainCall, dasics_main_call),
     MaskedRegMap(DasicsReturnPc, dasics_return_pc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
-    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "hf3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "hf2".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
   )
@@ -480,10 +480,10 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
     MaskedRegMap(DasicsMainCall, dasics_main_call),
     MaskedRegMap(DasicsReturnPc, dasics_return_pc),
     MaskedRegMap(DasicsActiveZoneReturnPC, dasics_azone_return_pc),
-    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "hf3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "hf2".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
   )
@@ -502,20 +502,39 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
   private val targetOutOfActive = dasics_jump_check(io.target, dasics)
   private val illegalBranch = io.valid && branchUntrusted && targetOutOfActive &&
     (io.target =/= dasics_return_pc) && (io.target =/= dasics_main_call) && (io.target =/= dasics_azone_return_pc)
-  io.resp.dasics_fault := Mux(
-    illegalBranch,
+  io.resp.dasics_fault := Mux(mainCfg.closeUFetchFault, DasicsCheckFault.noDasicsFault,
+    Mux(illegalBranch,
     Mux(io.mode === ModeU, DasicsCheckFault.UJumpDasicsFault, DasicsCheckFault.SJumpDasicsFault),
     DasicsCheckFault.noDasicsFault
-  )
+  ))
 }
 
 class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
-  val uEnable, sEnable = Bool()
+  val closeUFetchFault  = Bool()
+  val closeULoadFault   = Bool()
+  val closeUStoreFault  = Bool()
+  val closeUEcallFault  = Bool()
+  val uClear  = Bool()
+  val sClear  = Bool()
+  val uEnable = Bool()
+  val sEnable = Bool()
 
+  private val CUFT = 0x7
+  private val CULT = 0x6
+  private val CUST = 0x5
+  private val CUET = 0x4
+  private val UCLR = 0x3
+  private val SCLR = 0x2
   private val UENA = 0x1
   private val SENA = 0x0
 
   def gen(reg: UInt): Unit = {
+    this.closeUFetchFault := reg(CUFT)
+    this.closeULoadFault  := reg(CULT)
+    this.closeUStoreFault := reg(CUST)
+    this.closeUEcallFault := reg(CUET)
+    this.uClear  := reg(UCLR)
+    this.sClear  := reg(SCLR)
     this.uEnable := reg(UENA)
     this.sEnable := reg(SENA)
   }
@@ -607,10 +626,10 @@ class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
 
   val w = io.distribute_csr.w
   val mapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = Map(
-    MaskedRegMap(DasicsSMainCfg, mainCfgReg, "h3".U(XLEN.W)),
+    MaskedRegMap(DasicsSMainCfg, mainCfgReg, "hf3".U(XLEN.W)),
     MaskedRegMap(DasicsSMainBoundLo, sMainBoundLo),
     MaskedRegMap(DasicsSMainBoundHi, sMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, mainCfgReg, "h2".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfg, mainCfgReg, "hf2".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, uMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, uMainBoundHi)
   )

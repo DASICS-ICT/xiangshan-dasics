@@ -333,8 +333,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // DASICS Mapping
   val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsSMainCfgMask: UInt = "h3".U(XLEN.W)
-  val dasicsUMainCfgMask: UInt = "h2".U(XLEN.W)
+  val dasicsSMainCfgMask: UInt = "hf3".U(XLEN.W)
+  val dasicsUMainCfgMask: UInt = "hf2".U(XLEN.W)
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
 
