@@ -265,6 +265,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
   for( (dchecker,index) <- dasics_checkers.zipWithIndex){
      dchecker.mode := csrCtrl.mode
      dchecker.resource := dasics.io.entries
+     dchecker.mainCfg  := dasics.io.mainCfg
      dchecker.req := memDasicsReq(index)
      memDasicsResp(index) := dchecker.resp
   }

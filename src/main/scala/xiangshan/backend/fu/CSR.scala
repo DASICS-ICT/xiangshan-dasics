@@ -988,14 +988,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // raise a debug exception waiting to enter debug mode, instead of a breakpoint exception
   val raiseDebugException = !debugMode && isEbreak && ebreakEnterDebugMode
 
+  val dasics_main_cfg = Wire(new DasicsMainCfg);
+  dasics_main_cfg.gen(dasicsMainCfg);
+
   val csrExceptionVec = WireInit(cfIn.exceptionVec)
   csrExceptionVec(breakPoint) := io.in.valid && isEbreak
   csrExceptionVec(ecallM) := priviledgeMode === ModeM && io.in.valid && isEcall
-  csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall && !isUntrusted
-  csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall && !isUntrusted
+  csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeSEcallFault)
+  csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeUEcallFault)
 
-  csrExceptionVec(dasicsUEcallAccessFault) := priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted
-  csrExceptionVec(dasicsSEcallAccessFault) := priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted
+  csrExceptionVec(dasicsUEcallAccessFault) := priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeUEcallFault
+  csrExceptionVec(dasicsSEcallAccessFault) := priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeSEcallFault
 
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
