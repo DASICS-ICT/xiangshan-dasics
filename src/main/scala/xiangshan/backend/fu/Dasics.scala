@@ -703,25 +703,29 @@ class DasicsMemChecker(implicit p: Parameters) extends XSModule
   with HasCSRConst
 {
   val io = IO(new DasicsMemCheckerIO)
-
+  
   val req = io.req
   val dasics_entries = io.resource
 
-  val dasics_mem_fault = RegNext(dasics_mem_check(req, dasics_entries), init = false.B)
-  
+  val dasics_mem_fault = RegInit(false.B)
+  val dasics_req_read  = RegInit(false.B)
+  val dasics_req_write = RegInit(false.B)
+
+  when(io.req.valid){
+    dasics_mem_fault := dasics_mem_check(req, dasics_entries)
+    dasics_req_read  := DasicsOp.isRead(req.bits.operation)
+    dasics_req_write := DasicsOp.isWrite(req.bits.operation)
+  }
+
   io.resp.dasics_fault := DasicsCheckFault.noDasicsFault 
-  when(io.mode === ModeS){
-    when(DasicsOp.isRead(req.bits.operation) && dasics_mem_fault){
-      io.resp.dasics_fault := DasicsCheckFault.SReadDascisFault
-    }.elsewhen(DasicsOp.isWrite(req.bits.operation) && dasics_mem_fault){
-      io.resp.dasics_fault := DasicsCheckFault.SWriteDasicsFault
-    }
-  }.elsewhen(io.mode === ModeU){
-    when(DasicsOp.isRead(req.bits.operation) && dasics_mem_fault){
-      io.resp.dasics_fault := DasicsCheckFault.UReadDascisFault
-    }.elsewhen(DasicsOp.isWrite(req.bits.operation) && dasics_mem_fault){
-      io.resp.dasics_fault := DasicsCheckFault.UWriteDasicsFault
-    }    
+  when(io.mode === ModeS  && dasics_req_read && dasics_mem_fault){
+    io.resp.dasics_fault := DasicsCheckFault.SReadDascisFault
+  }.elsewhen(io.mode === ModeS && dasics_req_write && dasics_mem_fault){
+    io.resp.dasics_fault := DasicsCheckFault.SWriteDasicsFault
+  }.elsewhen(io.mode === ModeU &&dasics_req_read && dasics_mem_fault){
+    io.resp.dasics_fault := DasicsCheckFault.UReadDascisFault
+  }.elsewhen(io.mode === ModeU && dasics_req_write && dasics_mem_fault){
+    io.resp.dasics_fault := DasicsCheckFault.UWriteDasicsFault
   }
     
 }
