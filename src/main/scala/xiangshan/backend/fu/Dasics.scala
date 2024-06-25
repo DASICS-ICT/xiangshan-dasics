@@ -548,27 +548,25 @@ class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
   val closeSLoadFault   = Bool()
   val closeSStoreFault  = Bool()
   val closeSEcallFault  = Bool()
+  
   val closeUFetchFault  = Bool()
   val closeULoadFault   = Bool()
   val closeUStoreFault  = Bool()
   val closeUEcallFault  = Bool()
-  val uClear  = Bool()
-  val sClear  = Bool()
+
   val uEnable = Bool()
   val sEnable = Bool()
-  
-  private val CSFT = 0xB
-  private val CSLT = 0xA
-  private val CSST = 0x9
-  private val CSET = 0x8
 
-  private val CUFT = 0x7
-  private val CULT = 0x6
-  private val CUST = 0x5
-  private val CUET = 0x4
+  private val CSFT = 0x9
+  private val CSLT = 0x8
+  private val CSST = 0x7
+  private val CSET = 0x6
 
-  private val UCLR = 0x3
-  private val SCLR = 0x2
+  private val CUFT = 0x5
+  private val CULT = 0x4
+  private val CUST = 0x3
+  private val CUET = 0x2
+
   private val UENA = 0x1
   private val SENA = 0x0
 
@@ -577,12 +575,12 @@ class DasicsMainCfg(implicit p: Parameters) extends XSBundle {
     this.closeSLoadFault  := reg(CSLT)
     this.closeSStoreFault := reg(CSST)
     this.closeSEcallFault := reg(CSET)
+
     this.closeUFetchFault := reg(CUFT)
     this.closeULoadFault  := reg(CULT)
     this.closeUStoreFault := reg(CUST)
     this.closeUEcallFault := reg(CUET)
-    this.uClear  := reg(UCLR)
-    this.sClear  := reg(SCLR)
+
     this.uEnable := reg(UENA)
     this.sEnable := reg(SENA)
   }
