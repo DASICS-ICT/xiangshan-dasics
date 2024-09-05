@@ -325,6 +325,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val mideleg = RegInit(UInt(XLEN.W), 0.U)
   val mscratch = RegInit(UInt(XLEN.W), 0.U)
 
+
+  // Hart Priviledge Mode
+  val priviledgeMode = RegInit(UInt(2.W), ModeM)
+
   // PMP Mapping
   val pmp = Wire(Vec(NumPMP, new PMPEntry())) // just used for method parameter
   val pma = Wire(Vec(NumPMA, new PMPEntry())) // just used for method parameter
@@ -512,6 +516,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val utvec = RegInit(UInt(XLEN.W), 0.U)
   val utval = RegInit(UInt(XLEN.W), 0.U)
 
+  val utimer = RegInit(UInt(XLEN.W), 0.U)
+
+  when (priviledgeMode === ModeU && utimer > 1.U){
+    utimer := utimer - 1.U
+  }
+
   // fcsr
   class FcsrStruct extends Bundle {
     val reserved = UInt((XLEN-3-5).W)
@@ -559,8 +569,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // User-Level MPK Register
   val upkru = RegInit(UInt(XLEN.W), 0.U)
 
-  // Hart Priviledge Mode
-  val priviledgeMode = RegInit(UInt(2.W), ModeM)
 
   //val perfEventscounten = List.fill(nrPerfCnts)(RegInit(false(Bool())))
   // Perf Counter
@@ -717,7 +725,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   private val userMapping = Map(
     //--- User Trap Setup ---
     MaskedRegMap(Ustatus, mstatus, ustatusWmask, mstatusUpdateSideEffect, ustatusRmask),
-    MaskedRegMap(Uie, mie, uieMask, MaskedRegMap.Unwritable, uieMask),
+    MaskedRegMap(Uie, mie, uieMask, MaskedRegMap.NoSideEffect, uieMask),
     MaskedRegMap(Utvec, utvec, utvecMask, MaskedRegMap.NoSideEffect, utvecMask),
 
     // User Trap Handling
@@ -725,7 +733,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(Uepc, uepc, uepcMask, MaskedRegMap.NoSideEffect, uepcMask),
     MaskedRegMap(Ucause, ucause),
     MaskedRegMap(Utval, utval),
-    MaskedRegMap(Uip, mip.asUInt, 0.U(XLEN.W), MaskedRegMap.Unwritable, uipMask)
+    MaskedRegMap(Uip, mip.asUInt, 0.U(XLEN.W), MaskedRegMap.Unwritable, uipMask),
+    MaskedRegMap(Utimer, utimer)
   )
 
   val mpkMapping = Map(
@@ -768,6 +777,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
+  val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
+                   (addr >= Uscratch.U) && (addr <= Utimer.U)
+
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
     (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneReturnPC.U) ||
@@ -789,8 +801,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, priviledgeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInDasics && isUntrusted)
-  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
+  val dasicsPermitted = !(CSROpType.needAccess(func) && (addrInDasics || addrInNExt) && isUntrusted)
+  val permitted = Mux(addrInPerfCnt && addr =/= Mip.U, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
   io.out.bits.data := rdata
@@ -1046,6 +1058,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   mipWire.s.m := csrio.externalInterrupt.msip
   mipWire.e.m := csrio.externalInterrupt.meip
   mipWire.e.s := csrio.externalInterrupt.seip
+  mipWire.e.u := csrio.externalInterrupt.ueip | (utimer === 1.U)
 
   // interrupts
   val intrNO = IntPriority.foldRight(0.U)((i: Int, sum: UInt) => Mux(intrVec(i), i.U, sum))

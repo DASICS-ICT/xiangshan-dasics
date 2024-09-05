@@ -86,7 +86,8 @@ trait HasCSRConst {
 
   val DasicsJmpCfgBase = 0x8c8
   val DasicsJmpBoundBase = 0x8c0
-
+  
+  val Utimer        = 0x045
   // User-Level MPK Register
   val Upkru         = 0x800
 
