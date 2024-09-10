@@ -661,9 +661,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "hfff00b3ff".U(XLEN.W)),
-    MaskedRegMap(Mideleg, mideleg, "h222".U(XLEN.W)),
-    MaskedRegMap(Mie, mie),
+    MaskedRegMap(Medeleg, medeleg, "hff00b3ff".U(XLEN.W)),
+    MaskedRegMap(Mideleg, mideleg, "h333".U(XLEN.W)),
+    MaskedRegMap(Mie, mie, "hbbb".U(XLEN.W)),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
     MaskedRegMap(Mcounteren, mcounteren),
 
