@@ -775,6 +775,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
     addr === DasicsLibCfgBase.U
 
+  val addrInUExt = (addr >= Ustatus.U) && (addr <= Uip.U)
+  val addrIsMPK  = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
+
+  val addrInProtection = addrInDasics || addrInUExt || addrIsMPK
+
   // satp wen check
   val satpLegalMode = (wdata.asTypeOf(new SatpStruct).mode===0.U) || (wdata.asTypeOf(new SatpStruct).mode===8.U)
 
@@ -789,7 +794,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, priviledgeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInDasics && isUntrusted)
+  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
   val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
