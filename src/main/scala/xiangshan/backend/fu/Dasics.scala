@@ -129,7 +129,7 @@ class DasicsJumpEntry(implicit p: Parameters) extends XSBundle with DasicsConst 
 
   // match bound and output level one-hot code
   def boundMatchLevel(addr: UInt): Vec[Bool] = {
-    VecInit((0 until DasicsMaxLevel).map(lv => Mux(lv.U === this.level, boundMatch(addr), false.B)))
+    VecInit((0 until DasicsMaxLevel).map(lv => Mux(lv.U === this.level, this.cfg.valid && boundMatch(addr), false.B)))
   }
 
   // assign values (bounds parameter are XLEN-length)
@@ -156,7 +156,7 @@ class DasicsJumpEntry(implicit p: Parameters) extends XSBundle with DasicsConst 
     mb.gen(this.boundLo, this.boundHi)
     val pcHitVec = VecInit(mb.getPcTags(startAddr).map(!_)).asUInt  // main bound tag means miss, so revert them
     VecInit((0 until DasicsMaxLevel).map { level =>
-      Mux(level.U === this.level, pcHitVec, 0.U((FetchWidth * 2).W))
+      Mux(level.U === this.level && this.cfg.valid, pcHitVec, 0.U((FetchWidth * 2).W))
     })
   }
 }
