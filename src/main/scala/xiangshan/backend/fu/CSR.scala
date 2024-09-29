@@ -372,7 +372,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // Superviser-Level CSRs
 
   // val sstatus = RegInit(UInt(XLEN.W), "h00000000".U)
-  val sstatusWmask = "hc6122".U(XLEN.W)
+  val sstatusWmask = "hc6133".U(XLEN.W)
   // Sstatus Write Mask
   // -------------------------------------------------------
   //    19           9   5     2
@@ -391,9 +391,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val sidelegWMask: UInt = mideleg
 
   // val sie = RegInit(0.U(XLEN.W))
-  val sieMask = "h222".U & mideleg
-  val sipMask = "h222".U & mideleg
-  val sipWMask = "h2".U(XLEN.W) // ssip is writeable in smode
+  val sieMask = "h333".U & mideleg
+  val sipMask = "h333".U & mideleg
+  val sipWMask = "h3".U(XLEN.W) // ssip is writeable in smode
   val satp = if(EnbaleTlbDebug) RegInit(UInt(XLEN.W), "h8000000000087fbe".U) else RegInit(0.U(XLEN.W))
   // val satp = RegInit(UInt(XLEN.W), "h8000000000087fbe".U) // only use for tlb naive debug
   // val satpMask = "h80000fffffffffff".U(XLEN.W) // disable asid, mode can only be 8 / 0
@@ -667,7 +667,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "hff00b3ff".U(XLEN.W)),
+    MaskedRegMap(Medeleg, medeleg, "h300b3ff".U(XLEN.W)),
     MaskedRegMap(Mideleg, mideleg, "h333".U(XLEN.W)),
     MaskedRegMap(Mie, mie, "hbbb".U(XLEN.W)),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),

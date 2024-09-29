@@ -1,8 +1,0 @@
-# This file describes the GitHub Actions workflow for continuous integration of XS Core.
-name: EMU Test
-
-on:
-  push:
-    branches: [ none ]
-  pull_request:
-    branches: [ none ]
