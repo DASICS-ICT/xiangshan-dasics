@@ -21,7 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
-import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger, DasicsBranchChecker}
+import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger, DasicsBranchChecker, DasicsFaultReason}
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 
@@ -95,6 +95,12 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.pmp(2).resp <> pmp_check(2).resp
   ifu.io.pmp.resp <> pmp_check(3).resp
 
+
+  require(!(HasDasics ^ HasNExtension), s"Only support using N-Extension for DASICS")
+  ifu.io.dasics.resp.mode := tlbCsr.priv.imode
+  ifu.io.dasics.resp.dasics_fault := DasicsFaultReason.noDasicsFault
+  ifu.io.dasics.notTrusted := VecInit(Seq.fill(FetchWidth * 2){ false.B }) 
+  if(HasDasics){
   // DasicsTagger
   val dasicsTagger: DasicsTagger = Module(new DasicsTagger())
   dasicsTagger.io.distribute_csr := csrCtrl.distribute_csr
@@ -109,6 +115,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsBrChecker.io.lastBranch := ifu.io.dasics.lastBranch.bits
   dasicsBrChecker.io.target := ifu.io.dasics.startAddr
   ifu.io.dasics.resp := dasicsBrChecker.io.resp
+  }
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))
   // tlb_req_arb.io.in(0) <> ifu.io.iTLBInter.req

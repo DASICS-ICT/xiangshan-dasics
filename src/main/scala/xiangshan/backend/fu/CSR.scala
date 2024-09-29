@@ -783,9 +783,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
-  val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
-                   (addr >= Uscratch.U) && (addr <= Utimer.U)
-
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
     (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) ||
@@ -793,7 +790,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
     addr === DasicsLibCfgBase.U
 
-  val addrInMPK = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
+
+  val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
+                   (addr >= Uscratch.U) && (addr <= Utimer.U)
+  val addrIsMPK  = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
+
+  val addrInProtection = addrInDasics || addrInNExt || addrIsMPK
 
   // satp wen check
   val satpLegalMode = (wdata.asTypeOf(new SatpStruct).mode===0.U) || (wdata.asTypeOf(new SatpStruct).mode===8.U)
@@ -809,8 +811,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
-  val DasicsPermitted = !(CSROpType.needAccess(func) && (addrInDasics || addrInNExt || addrInMPK) && isUntrusted)
-  val permitted = Mux(addrInPerfCnt && addr =/= Mip.U, perfcntPermitted, modePermitted) && accessPermitted && DasicsPermitted
+  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
+  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
   io.out.bits.data := rdata
@@ -1018,9 +1020,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrExceptionVec(ecallU) := privilegeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasicsCfg.closeUEcallFault)
 
   // handle dasics ecall fault  
-  val hasDasicsUEcallFault = privilegeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeUEcallFault
+  val hasDasicsUEcallFault =  HasDasics.B && privilegeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeUEcallFault
   csrExceptionVec(dasicsUCheckFault) := cfIn.exceptionVec(dasicsUCheckFault) || hasDasicsUEcallFault
-  val hasDasicsSEcallFault = privilegeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeSEcallFault
+  val hasDasicsSEcallFault =  HasDasics.B && privilegeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeSEcallFault
   csrExceptionVec(dasicsSCheckFault) := cfIn.exceptionVec(dasicsSCheckFault) || hasDasicsSEcallFault
 
   // Trigger an illegal instr exception when:
@@ -1107,11 +1109,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
 
-  val hasDasicsUCheckFault  = hasException && exceptionVecFromRob(dasicsUCheckFault)
+  val hasDasicsUCheckFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsUCheckFault)
   val hasDasicsULoadFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
   val hasDasicsUStoreFault  = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
   val hasDasicsUJumpFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault
-  val hasDasicsSCheckFault  = hasException && exceptionVecFromRob(dasicsSCheckFault)
+  val hasDasicsSCheckFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsSCheckFault)
   val hasDasicsSLoadFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
   val hasDasicsSStoreFault  = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
   val hasDasicsSJumpFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault
@@ -1123,6 +1125,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     // interrupt and dasics jump both occurs
   val hasDasicsJumpIntr        = (hasIntr && 
                                (exceptionVecFromRob(dasicsUCheckFault) || exceptionVecFromRob(dasicsSCheckFault)) && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault)
+
 
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
