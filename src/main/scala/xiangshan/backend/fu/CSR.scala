@@ -997,8 +997,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeSEcallFault)
   csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeUEcallFault)
 
-  csrExceptionVec(dasicsUEcallAccessFault) := priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeUEcallFault
-  csrExceptionVec(dasicsSEcallAccessFault) := priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeSEcallFault
+  csrExceptionVec(dasicsUEcallAccessFault) := HasDasics.B && priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeUEcallFault
+  csrExceptionVec(dasicsSEcallAccessFault) := HasDasics.B && priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeSEcallFault
 
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
@@ -1083,12 +1083,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasPKSLoadPageFault   = hasException && exceptionVecFromRob(pksLoadPageFault)
   val hasPKSStorePageFault  = hasException && exceptionVecFromRob(pksStorePageFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
-  val hasDasicsULoadFault   = hasException && exceptionVecFromRob(dasicsULoadAccessFault)
-  val hasDasicsSLoadFault   = hasException && exceptionVecFromRob(dasicsSLoadAccessFault)
-  val hasDasicsUStoreFault  = hasException && exceptionVecFromRob(dasicsUStoreAccessFault)
-  val hasDasicsSStoreFault  = hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
-  val hasDasicsUFetchFault  = hasException && exceptionVecFromRob(dasicsUIntrAccessFault)
-  val hasDasicsSFetchFault  = hasException && exceptionVecFromRob(dasicsSIntrAccessFault)
+  val hasDasicsULoadFault   = HasDasics.B && hasException && exceptionVecFromRob(dasicsULoadAccessFault)
+  val hasDasicsSLoadFault   = HasDasics.B && hasException && exceptionVecFromRob(dasicsSLoadAccessFault)
+  val hasDasicsUStoreFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsUStoreAccessFault)
+  val hasDasicsSStoreFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
+  val hasDasicsUFetchFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsUIntrAccessFault)
+  val hasDasicsSFetchFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsSIntrAccessFault)
   // interrupt and dasics fetch both occurs
   val hasDasicsFetchIntr    =
     hasIntr && (exceptionVecFromRob(dasicsUIntrAccessFault) || exceptionVecFromRob(dasicsSIntrAccessFault))
