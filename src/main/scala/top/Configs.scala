@@ -445,3 +445,31 @@ class NanHuGCacheConfig extends Config(
 class NanHuGConfig(n: Int = 1) extends Config(
   new NanHuGCacheConfig ++ new NanHuGCoreConfig(n)
 )
+
+// FPGA Config:
+// * Dissable BasicDiff
+class NanHuGFPGAConfig(n: Int = 1) extends Config(
+  new NanHuGConfig(n).alter((site, here, up) => {
+    case DebugOptionsKey => up(DebugOptionsKey).copy(
+      AlwaysBasicDiff = false
+    )
+    case SoCParamsKey => up(SoCParamsKey).copy(
+      L3CacheParamsOpt = Some(up(SoCParamsKey).L3CacheParamsOpt.get.copy(
+        sramClkDivBy2 = false,
+      ))
+    )
+  })
+)
+
+class MinimalFPGAConfig(n: Int = 1) extends Config(
+  new MinimalConfig(n).alter((site, here, up) => {
+    case DebugOptionsKey => up(DebugOptionsKey).copy(
+      AlwaysBasicDiff = false
+    )
+    case SoCParamsKey => up(SoCParamsKey).copy(
+      L3CacheParamsOpt = Some(up(SoCParamsKey).L3CacheParamsOpt.get.copy(
+        sramClkDivBy2 = false,
+      ))
+    )
+  })
+)
