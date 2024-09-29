@@ -95,13 +95,12 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   icache.io.pmp(2).resp <> pmp_check(2).resp
   ifu.io.pmp.resp <> pmp_check(3).resp
 
-  // dasicsTagger
+  // DasicsTagger
   val dasicsTagger: DasicsTagger = Module(new DasicsTagger())
   dasicsTagger.io.distribute_csr := csrCtrl.distribute_csr
-  dasicsTagger.io.privMode := tlbCsr.priv.imode
+  dasicsTagger.io.mode := tlbCsr.priv.imode
   dasicsTagger.io.addr := ifu.io.dasics.startAddr
   ifu.io.dasics.notTrusted := dasicsTagger.io.notTrusted
-
   // dasics branch checker
   val dasicsBrChecker: DasicsBranchChecker = Module(new DasicsBranchChecker())
   dasicsBrChecker.io.distribute_csr := csrCtrl.distribute_csr
@@ -109,7 +108,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsBrChecker.io.valid := ifu.io.dasics.lastBranch.valid
   dasicsBrChecker.io.lastBranch := ifu.io.dasics.lastBranch.bits
   dasicsBrChecker.io.target := ifu.io.dasics.startAddr
-  ifu.io.dasics.brResp := dasicsBrChecker.io.resp.dasics_fault
+  ifu.io.dasics.resp := dasicsBrChecker.io.resp
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))
   // tlb_req_arb.io.in(0) <> ifu.io.iTLBInter.req

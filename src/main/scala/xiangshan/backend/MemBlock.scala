@@ -168,7 +168,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
   atomicsUnit.io.out.ready := ldOut0.ready
   loadUnits.head.io.ldout.ready := ldOut0.ready
   when(atomicsUnit.io.out.valid){
-    ldOut0.bits.uop.cf.exceptionVec := 0.U(28.W).asBools // exception will be writebacked via store wb port
+    ldOut0.bits.uop.cf.exceptionVec := 0.U.asTypeOf(ExceptionVec())// exception will be writebacked via store wb port
   }
 
   val ldExeWbReqs = ldOut0 +: loadUnits.tail.map(_.io.ldout)
@@ -254,18 +254,17 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
   // dasics memory access check
   val dasics = Module(new MemDasics())
   dasics.io.distribute_csr <> csrCtrl.distribute_csr
- 
-  val dasics_checkers = VecInit(Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt)(
-    Module(new DasicsMemChecker()).io
-  )) //TODO: general Dasics check port config
+
+  private val dasicsCheckers = Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt)(Module(new DasicsMemChecker()))
+  private val dasicsCheckersIOs = dasicsCheckers.map(_.io)
 
   val memDasicsReq  = storeUnits.map(_.io.dasicsReq) ++ loadUnits.map(_.io.dasicsReq)
   val memDasicsResp = storeUnits.map(_.io.dasicsResp) ++ loadUnits.map(_.io.dasicsResp)
 
-  for( (dchecker,index) <- dasics_checkers.zipWithIndex){
+  for( (dchecker,index) <- dasicsCheckersIOs.zipWithIndex){
      dchecker.mode := csrCtrl.mode
+     dchecker.mainCfg := dasics.io.mainCfg
      dchecker.resource := dasics.io.entries
-     dchecker.mainCfg  := dasics.io.mainCfg
      dchecker.req := memDasicsReq(index)
      memDasicsResp(index) := dchecker.resp
   }

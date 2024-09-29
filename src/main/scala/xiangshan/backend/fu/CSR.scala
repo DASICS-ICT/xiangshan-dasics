@@ -110,9 +110,9 @@ class CSRFileIO(implicit p: Parameters) extends XSBundle {
   val distributedUpdate = Vec(2, Flipped(new DistributedCSRUpdateReq))
 }
 
-class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMPMethod with PMAMethod with HasTriggerConst
-  with SdtrigExt with DebugCSR with DasicsMethod
-{
+class CSR(implicit p: Parameters) extends FunctionUnit
+  with HasCSRConst with PMPMethod with PMAMethod
+  with HasTriggerConst  with SdtrigExt with DebugCSR with DasicsMethod {
   val csrio = IO(new CSRFileIO)
 
   val cfIn = io.in.bits.uop.cf
@@ -125,7 +125,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     io.in.bits.src(0),
     io.in.bits.uop.ctrl.imm,
     io.in.bits.uop.ctrl.fuOpType,
-    io.in.bits.uop.dasicsUntrusted
+    io.in.bits.uop.cf.dasicsUntrusted
   )
 
   // CSR define
@@ -327,7 +327,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
 
   // Hart Priviledge Mode
-  val priviledgeMode = RegInit(UInt(2.W), ModeM)
+  val privilegeMode = RegInit(UInt(2.W), ModeM)
 
   // PMP Mapping
   val pmp = Wire(Vec(NumPMP, new PMPEntry())) // just used for method parameter
@@ -342,15 +342,20 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
   val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
 
-  val dasicsMainCall: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsAZoneReturnPc: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasics_mem: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
-  val dasics_jump: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
-  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = dasicsGenMemMapping(
-    mem_init = dasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasics_mem
-  ) ++ dasicsGenJumpMapping(
-    jump_init = dasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasics_jump
+  val dasicsCfg = Wire(new DasicsMainCfg())
+  dasicsCfg.gen(dasicsMainCfg)
+  csrio.customCtrl.dasics_enable := dasicsCfg.uEnable
+
+  val dasicsMainCallReg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsFReasonReg:  UInt = RegInit(UInt(DasicsFaultWidth.W), 0.U)
+  val dasicsAZoneReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsMemBoundRegs: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
+  val dasicsJumpBoundRegs: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
+  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = DasicsGenMemMapping(
+    mem_init = DasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasicsMemBoundRegs
+  ) ++ DasicsGenJumpMapping(
+    jump_init = DasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs
   ) ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
@@ -358,9 +363,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = dasicsUMainCfgMask, rmask = dasicsUMainCfgMask),
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
-    MaskedRegMap(DasicsMainCall, dasicsMainCall),
-    MaskedRegMap(DasicsReturnPc, dasicsReturnPc),
-    MaskedRegMap(DasicsActiveZoneReturnPC, dasicsAZoneReturnPc)
+    MaskedRegMap(DasicsMainCall, dasicsMainCallReg),
+    MaskedRegMap(DasicsReturnPc, dasicsReturnPcReg),
+    MaskedRegMap(DasicsActiveZoneReturnPc, dasicsAZoneReturnPcReg),
+    MaskedRegMap(DasicsFReason, dasicsFReasonReg)
   )
 
   // Superviser-Level CSRs
@@ -518,7 +524,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   val utimer = RegInit(UInt(XLEN.W), 0.U)
 
-  when (priviledgeMode === ModeU && utimer > 1.U){
+  when (privilegeMode === ModeU && utimer > 1.U){
     utimer := utimer - 1.U
   }
 
@@ -573,7 +579,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   //val perfEventscounten = List.fill(nrPerfCnts)(RegInit(false(Bool())))
   // Perf Counter
   val nrPerfCnts = 29  // 3...31
-  val priviledgeModeOH = UIntToOH(priviledgeMode)
+  val privilegeModeOH = UIntToOH(privilegeMode)
   val perfEventscounten = RegInit(0.U.asTypeOf(Vec(nrPerfCnts, Bool())))
   val perfCnts   = List.fill(nrPerfCnts)(RegInit(0.U(XLEN.W)))
   val perfEvents = List.fill(8)(RegInit("h0000000000".U(XLEN.W))) ++
@@ -581,7 +587,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
                    List.fill(8)(RegInit("h8020080200".U(XLEN.W))) ++
                    List.fill(5)(RegInit("hc0300c0300".U(XLEN.W)))
   for (i <-0 until nrPerfCnts) {
-    perfEventscounten(i) := (perfEvents(i)(63,60) & priviledgeModeOH).orR
+    perfEventscounten(i) := (perfEvents(i)(63,60) & privilegeModeOH).orR
   }
 
   val hpmEvents = Wire(Vec(numPCntHc * coreParams.L2NBanks, new PerfEvent))
@@ -781,17 +787,19 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
                    (addr >= Uscratch.U) && (addr <= Utimer.U)
 
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
-    (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) || 
-    (addr >= DasicsMainCall.U) && (addr <= DasicsActiveZoneReturnPC.U) ||
+    (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
+    (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) ||
     (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
     (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
     addr === DasicsLibCfgBase.U
+
+  val addrInMPK = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
 
   // satp wen check
   val satpLegalMode = (wdata.asTypeOf(new SatpStruct).mode===0.U) || (wdata.asTypeOf(new SatpStruct).mode===8.U)
 
   // csr access check, special case
-  val tvmNotPermit = (priviledgeMode === ModeS && mstatusStruct.tvm.asBool)
+  val tvmNotPermit = (privilegeMode === ModeS && mstatusStruct.tvm.asBool)
   val accessPermitted = !(addr === Satp.U && tvmNotPermit)
   csrio.disableSfence := tvmNotPermit
 
@@ -799,10 +807,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
-  val modePermitted = csrAccessPermissionCheck(addr, false.B, priviledgeMode) && dcsrPermitted && triggerPermitted
-  val perfcntPermitted = perfcntPermissionCheck(addr, priviledgeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && (addrInDasics || addrInNExt) && isUntrusted)
-  val permitted = Mux(addrInPerfCnt && addr =/= Mip.U, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
+  val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
+  val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
+  val DasicsPermitted = !(CSROpType.needAccess(func) && (addrInDasics || addrInNExt || addrInMPK) && isUntrusted)
+  val permitted = Mux(addrInPerfCnt && addr =/= Mip.U, perfcntPermitted, modePermitted) && accessPermitted && DasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
   io.out.bits.data := rdata
@@ -815,7 +823,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   csrio.customCtrl.distribute_csr.w.bits.data := wdata
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
 
-  csrio.customCtrl.mode := priviledgeMode
+  csrio.customCtrl.mode := privilegeMode
 
   // Fix Mip/Sip/Uip write
   val fixMapping = Map(
@@ -851,9 +859,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val triggerEnableVec = tdata1RegVec.map { tdata1 =>
     val mcontrolData = tdata1.asTypeOf(new Tdata1Bundle).data.asTypeOf(new MControlData)
     tdata1.asTypeOf(new Tdata1Bundle).type_.asUInt === TrigTypeEnum.MCONTROL && (
-      mcontrolData.m && priviledgeMode === ModeM ||
-        mcontrolData.s && priviledgeMode === ModeS ||
-        mcontrolData.u && priviledgeMode === ModeU)
+      mcontrolData.m && privilegeMode === ModeM ||
+        mcontrolData.s && privilegeMode === ModeS ||
+        mcontrolData.u && privilegeMode === ModeU)
   }
   val fetchTriggerEnableVec = triggerEnableVec.zip(tdata1WireVec).map {
     case (tEnable, tdata1) => tEnable && tdata1.asTypeOf(new Tdata1Bundle).data.asTypeOf(new MControlData).isFetchTrigger
@@ -891,18 +899,18 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val isWFI    = func === CSROpType.wfi
   
   XSDebug(wen, "csr write: pc %x addr %x rdata %x wdata %x func %x\n", cfIn.pc, addr, rdata, wdata, func)
-  XSDebug(wen, "pc %x mstatus %x mideleg %x medeleg %x mode %x\n", cfIn.pc, mstatus, mideleg , medeleg, priviledgeMode)
+  XSDebug(wen, "pc %x mstatus %x mideleg %x medeleg %x mode %x\n", cfIn.pc, mstatus, mideleg , medeleg, privilegeMode)
 
   // Illegal priviledged operation list
-  val illegalMret = valid && isMret && priviledgeMode < ModeM
-  val illegalSret = valid && isSret && priviledgeMode < ModeS
-  val illegalSModeSret = valid && isSret && priviledgeMode === ModeS && mstatusStruct.tsr.asBool
+  val illegalMret = valid && isMret && privilegeMode < ModeM
+  val illegalSret = valid && isSret && privilegeMode < ModeS
+  val illegalSModeSret = valid && isSret && privilegeMode === ModeS && mstatusStruct.tsr.asBool
   // When TW=1, then if WFI is executed in any less-privileged mode,
   // and it does not complete within an implementation-specific, bounded time limit,
   // the WFI instruction causes an illegal instruction exception.
   // The time limit may always be 0, in which case WFI always causes
   // an illegal instruction exception in less-privileged modes when TW=1.
-  val illegalWFI = valid && isWFI && priviledgeMode < ModeM && mstatusStruct.tw === 1.U
+  val illegalWFI = valid && isWFI && privilegeMode < ModeM && mstatusStruct.tw === 1.U
 
   // Illegal priviledged instruction check
   val isIllegalAddr = valid && CSROpType.needAccess(func) && MaskedRegMap.isIllegalAddr(mapping, addr)
@@ -912,10 +920,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // expose several csr bits for tlb
   tlbBundle.priv.mxr   := mstatusStruct.mxr.asBool
   tlbBundle.priv.sum   := mstatusStruct.sum.asBool
-  tlbBundle.priv.imode := priviledgeMode
-  tlbBundle.priv.dmode := Mux(debugMode && dcsr.asTypeOf(new DcsrStruct).mprven, ModeM, Mux(mstatusStruct.mprv.asBool, mstatusStruct.mpp, priviledgeMode))
-  tlbBundle.mpk.enable := Mux(priviledgeMode === ModeU, spkctl(0), Mux(priviledgeMode === ModeS, spkctl(1), false.B))
-  tlbBundle.mpk.pkr    := Mux(priviledgeMode === ModeU, upkru, spkrs)
+  tlbBundle.priv.imode := privilegeMode
+  tlbBundle.priv.dmode := Mux(debugMode && dcsr.asTypeOf(new DcsrStruct).mprven, ModeM, Mux(mstatusStruct.mprv.asBool, mstatusStruct.mpp, privilegeMode))
+  tlbBundle.mpk.enable := Mux(privilegeMode === ModeU, spkctl(0), Mux(privilegeMode === ModeS, spkctl(1), false.B))
+  tlbBundle.mpk.pkr    := Mux(privilegeMode === ModeU, upkru, spkrs)
 
   // Branch control
   val retTarget = WireInit(0.U)
@@ -952,7 +960,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       val debugModeNew = WireInit(debugMode)
       when (dcsr.asTypeOf(new DcsrStruct).prv =/= ModeM) {mstatusNew.mprv := 0.U} //If the new privilege mode is less privileged than M-mode, MPRV in mstatus is cleared.
       mstatus := mstatusNew.asUInt
-      priviledgeMode := dcsr.asTypeOf(new DcsrStruct).prv
+      privilegeMode := dcsr.asTypeOf(new DcsrStruct).prv
       debugModeNew := false.B
       debugIntrEnable := true.B
       debugMode := debugModeNew
@@ -961,7 +969,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
       mstatusNew.ie.m := mstatusOld.pie.m
-      priviledgeMode := mstatusOld.mpp
+      privilegeMode := mstatusOld.mpp
       mstatusNew.pie.m := true.B
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
@@ -970,7 +978,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
       mstatusNew.ie.s := mstatusOld.pie.s
-      priviledgeMode := Cat(0.U(1.W), mstatusOld.spp)
+      privilegeMode := Cat(0.U(1.W), mstatusOld.spp)
       mstatusNew.pie.s := true.B
       mstatusNew.spp := ModeU
       mstatus := mstatusNew.asUInt
@@ -980,7 +988,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
       // mstatusNew.mpp.m := ModeU //TODO: add mode U
       mstatusNew.ie.u := mstatusOld.pie.u
-      priviledgeMode := ModeU
+      privilegeMode := ModeU
       mstatusNew.pie.u := true.B
       mstatus := mstatusNew.asUInt
     }
@@ -993,9 +1001,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   // Ebreak block instructions backwards, so it's ok to not keep extra info to distinguish between breakpoint
   // exception and enter-debug-mode exception.
   val ebreakEnterDebugMode =
-    (priviledgeMode === ModeM && dcsrData.ebreakm) ||
-    (priviledgeMode === ModeS && dcsrData.ebreaks) ||
-    (priviledgeMode === ModeU && dcsrData.ebreaku)
+    (privilegeMode === ModeM && dcsrData.ebreakm) ||
+    (privilegeMode === ModeS && dcsrData.ebreaks) ||
+    (privilegeMode === ModeU && dcsrData.ebreaku)
 
   // raise a debug exception waiting to enter debug mode, instead of a breakpoint exception
   val raiseDebugException = !debugMode && isEbreak && ebreakEnterDebugMode
@@ -1005,18 +1013,23 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   val csrExceptionVec = WireInit(cfIn.exceptionVec)
   csrExceptionVec(breakPoint) := io.in.valid && isEbreak
-  csrExceptionVec(ecallM) := priviledgeMode === ModeM && io.in.valid && isEcall
-  csrExceptionVec(ecallS) := priviledgeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeSEcallFault)
-  csrExceptionVec(ecallU) := priviledgeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasics_main_cfg.closeUEcallFault)
+  csrExceptionVec(ecallM) := privilegeMode === ModeM && io.in.valid && isEcall
+  csrExceptionVec(ecallS) := privilegeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasicsCfg.closeSEcallFault)
+  csrExceptionVec(ecallU) := privilegeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasicsCfg.closeUEcallFault)
 
-  csrExceptionVec(dasicsUEcallAccessFault) := priviledgeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeUEcallFault
-  csrExceptionVec(dasicsSEcallAccessFault) := priviledgeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasics_main_cfg.closeSEcallFault
+  // handle dasics ecall fault  
+  val hasDasicsUEcallFault = privilegeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeUEcallFault
+  csrExceptionVec(dasicsUCheckFault) := cfIn.exceptionVec(dasicsUCheckFault) || hasDasicsUEcallFault
+  val hasDasicsSEcallFault = privilegeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeSEcallFault
+  csrExceptionVec(dasicsSCheckFault) := cfIn.exceptionVec(dasicsSCheckFault) || hasDasicsSEcallFault
 
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
   // * csr access is illegal
   csrExceptionVec(illegalInstr) := isIllegalAddr || isIllegalAccess || isIllegalPrivOp
   cfOut.exceptionVec := csrExceptionVec
+  cfOut.dasicsFaultReason :=   Mux((hasDasicsSEcallFault || hasDasicsUEcallFault) && cfIn.dasicsFaultReason < DasicsFaultReason.EcallDasicsFault,
+                                 DasicsFaultReason.EcallDasicsFault, cfIn.dasicsFaultReason)
 
   XSDebug(io.in.valid, s"Debug Mode: an Ebreak is executed, ebreak cause enter-debug-mode exception ? ${raiseDebugException}\n")
 
@@ -1033,9 +1046,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   def priviledgedEnableDetect(mdeleg: Bool, sdeleg: Bool): Bool = Mux(
     mdeleg,
     Mux(sdeleg,
-      (priviledgeMode === ModeU) && mstatusStruct.ie.u,
-      ((priviledgeMode === ModeS) && mstatusStruct.ie.s) || (priviledgeMode < ModeS)),
-    ((priviledgeMode === ModeM) && mstatusStruct.ie.m) || (priviledgeMode < ModeM)
+      (privilegeMode === ModeU) && mstatusStruct.ie.u,
+      ((privilegeMode === ModeS) && mstatusStruct.ie.s) || (privilegeMode < ModeS)),
+    ((privilegeMode === ModeM) && mstatusStruct.ie.m) || (privilegeMode < ModeM)
   )
 
   val debugIntr = csrio.externalInterrupt.debug & debugIntrEnable
@@ -1082,6 +1095,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
 
   // exceptions from rob need to handle
   val exceptionVecFromRob   = csrio.exception.bits.uop.cf.exceptionVec
+  val dasicsFaultReasonFromRob = csrio.exception.bits.uop.cf.dasicsFaultReason
   val hasException          = csrio.exception.valid && !csrio.exception.bits.isInterrupt
   val hasInstrPageFault     = hasException && exceptionVecFromRob(instrPageFault)
   val hasLoadPageFault      = hasException && exceptionVecFromRob(loadPageFault)
@@ -1091,20 +1105,25 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasInstrAccessFault   = hasException && exceptionVecFromRob(instrAccessFault)
   val hasLoadAccessFault    = hasException && exceptionVecFromRob(loadAccessFault)
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
-  val hasPKULoadPageFault   = hasException && exceptionVecFromRob(pkuLoadPageFault)
-  val hasPKUStorePageFault  = hasException && exceptionVecFromRob(pkuStorePageFault)
-  val hasPKSLoadPageFault   = hasException && exceptionVecFromRob(pksLoadPageFault)
-  val hasPKSStorePageFault  = hasException && exceptionVecFromRob(pksStorePageFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
-  val hasDasicsULoadFault   = hasException && exceptionVecFromRob(dasicsULoadAccessFault)
-  val hasDasicsSLoadFault   = hasException && exceptionVecFromRob(dasicsSLoadAccessFault)
-  val hasDasicsUStoreFault  = hasException && exceptionVecFromRob(dasicsUStoreAccessFault)
-  val hasDasicsSStoreFault  = hasException && exceptionVecFromRob(dasicsSStoreAccessFault)
-  val hasDasicsUFetchFault  = hasException && exceptionVecFromRob(dasicsUIntrAccessFault)
-  val hasDasicsSFetchFault  = hasException && exceptionVecFromRob(dasicsSIntrAccessFault)
-  // interrupt and dasics fetch both occurs
-  val hasDasicsFetchIntr    =
-    hasIntr && (exceptionVecFromRob(dasicsUIntrAccessFault) || exceptionVecFromRob(dasicsSIntrAccessFault))
+
+  val hasDasicsUCheckFault  = hasException && exceptionVecFromRob(dasicsUCheckFault)
+  val hasDasicsULoadFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
+  val hasDasicsUStoreFault  = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
+  val hasDasicsUJumpFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault
+  val hasDasicsSCheckFault  = hasException && exceptionVecFromRob(dasicsSCheckFault)
+  val hasDasicsSLoadFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
+  val hasDasicsSStoreFault  = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
+  val hasDasicsSJumpFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault
+
+  val hasPKULoadPageFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadMPKFault
+  val hasPKUStorePageFault  = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreMPKFault
+  val hasPKSLoadPageFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadMPKFault
+  val hasPKSStorePageFault  = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreMPKFault
+    // interrupt and dasics jump both occurs
+  val hasDasicsJumpIntr        = (hasIntr && 
+                               (exceptionVecFromRob(dasicsUCheckFault) || exceptionVecFromRob(dasicsSCheckFault)) && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault)
+
   val hasSingleStep         = hasException && csrio.exception.bits.uop.ctrl.singleStep
   val hasTriggerFire        = hasException && csrio.exception.bits.uop.cf.trigger.canFire
   val triggerFrontendHitVec = csrio.exception.bits.uop.cf.trigger.frontendHit
@@ -1123,14 +1142,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val hasExceptionVec = csrio.exception.bits.uop.cf.exceptionVec
   val regularExceptionVec = hasExceptionVec.take(16)
   val dasicsExceptionVec = ExceptionNO.selectDasics(hasExceptionVec)
-  val mpkExceptionVec = ExceptionNO.selectMpk(hasExceptionVec)
   val regularExceptionNO = ExceptionNO.prioritiesRegular.foldRight(0.U)((i: Int, sum: UInt) => Mux(regularExceptionVec(i), i.U, sum))
-  val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + dasicsExcOffset).U, sum))
-  val mpkExceptionNo = ExceptionNO.mpkSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(mpkExceptionVec(i), (i + mpkExcOffset).U, sum))
-  
+  val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + DasicsExcOffset).U, sum))
+
   val exceptionNO = Mux(hasSingleStep || hasTriggerFire, 3.U,
-    Mux(regularExceptionVec.reduce(_||_), regularExceptionNO,
-      Mux(dasicsExceptionVec.reduce(_||_), dasicsExceptionNo, mpkExceptionNo)))
+    Mux(regularExceptionVec.reduce(_||_), regularExceptionNO, dasicsExceptionNo))
   val causeNO = (hasIntr << (XLEN-1)).asUInt | Mux(hasIntr, intrNOReg, exceptionNO)
 
   val hasExceptionIntr = csrio.exception.valid
@@ -1150,7 +1166,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     mstatus,
     mideleg,
     medeleg,
-    priviledgeMode
+    privilegeMode
   )
 
   // mtval write logic
@@ -1174,12 +1190,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     hasDasicsULoadFault,
     hasDasicsSStoreFault,
     hasDasicsUStoreFault,
-    hasDasicsUFetchFault,
-    hasDasicsSFetchFault
+    hasDasicsUJumpFault,
+    hasDasicsSJumpFault
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
     val tval = Mux(
-      RegNext(RegNext((hasDasicsUFetchFault || hasDasicsSFetchFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
+      RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
       // for dasics fetch faults, epc is the last branch, tval is this instr
       RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
       Mux(
@@ -1192,9 +1208,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
         memExceptionAddr
       )
     )
-    when (RegNext(priviledgeMode === ModeM)) {
+    when (RegNext(privilegeMode === ModeM)) {
       mtval := tval
-    }.elsewhen (RegNext(priviledgeMode === ModeS)) {
+    }.elsewhen (RegNext(privilegeMode === ModeS)) {
       stval := tval
     }.otherwise {
       utval := tval
@@ -1204,9 +1220,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   val debugTrapTarget = Mux(!isEbreak && debugMode, 0x38020808.U, 0x38020800.U) // 0x808 is when an exception occurs in debug mode prog buf exec
   private val delegVecM = Mux(hasIntr, mideleg , medeleg)
   private val delegVecS = Mux(hasIntr, sideleg, sedeleg)
-  // val delegS = ((deleg & (1 << (causeNO & 0xf))) != 0) && (priviledgeMode < ModeM);
-  private val delegS = delegVecM(causeNO(7,0)) && (priviledgeMode < ModeM)
-  private val delegU = delegVecS(causeNO(7,0)) && (priviledgeMode < ModeS)
+  // val delegS = ((deleg & (1 << (causeNO & 0xf))) != 0) && (privilegeMode < ModeM);
+  private val delegS = delegVecM(causeNO(7,0)) && (privilegeMode < ModeM)
+  private val delegU = delegVecS(causeNO(7,0)) && (privilegeMode < ModeS)
   val clearTval = !updateTval || hasIntr
 
   // ctrl block will use theses later for flush
@@ -1244,13 +1260,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     val dcsrNew = WireInit(dcsr.asTypeOf(new DcsrStruct))
     val debugModeNew = WireInit(debugMode)
     val lastBranchInfo = WireInit(csrio.exception.bits.uop.cf.lastBranch)
-    val hasDasicsBrFault = (hasDasicsUFetchFault || hasDasicsSFetchFault) && lastBranchInfo.valid
-    val hasDasicsBrIntr = hasDasicsFetchIntr && lastBranchInfo.valid
+    val hasDasicsBrFault = (hasDasicsUJumpFault || hasDasicsSJumpFault) && lastBranchInfo.valid
+    val hasDasicsBrIntr = hasDasicsJumpIntr && lastBranchInfo.valid
     when (hasDebugTrap && !debugMode) {
       import DcsrStruct._
       debugModeNew := true.B
-      dcsrNew.prv := priviledgeMode
-      priviledgeMode := ModeM
+      dcsrNew.prv := privilegeMode
+      privilegeMode := ModeM
       when (hasDebugIntr) {
         dpc := iexceptionPC
         dcsrNew.cause := CAUSE_HALTREQ
@@ -1277,7 +1293,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
       )
       mstatusNew.pie.u := mstatusOld.ie.u
       mstatusNew.ie.u := false.B
-      priviledgeMode := ModeU
+      privilegeMode := ModeU
       when (clearTval) { utval := 0.U }
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
@@ -1286,10 +1302,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
         lastBranchInfo.bits,
         Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
-      mstatusNew.spp := priviledgeMode
+      mstatusNew.spp := privilegeMode
       mstatusNew.pie.s := mstatusOld.ie.s
       mstatusNew.ie.s := false.B
-      priviledgeMode := ModeS
+      privilegeMode := ModeS
       when (clearTval) { stval := 0.U }
     }.otherwise {
       mcause := causeNO
@@ -1298,10 +1314,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
         lastBranchInfo.bits,
         Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
-      mstatusNew.mpp := priviledgeMode
+      mstatusNew.mpp := privilegeMode
       mstatusNew.pie.m := mstatusOld.ie.m
       mstatusNew.ie.m := false.B
-      priviledgeMode := ModeM
+      privilegeMode := ModeM
       when (clearTval) { mtval := 0.U }
     }
     mstatus := mstatusNew.asUInt
@@ -1309,6 +1325,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
   }
 
   XSDebug(hasExceptionIntr && delegS, "sepc is writen!!! pc:%x\n", cfIn.pc)
+
+  // save fault reason in DasicsFReason Reg from ROB
+  when (hasDasicsUCheckFault || hasDasicsSCheckFault){
+    dasicsFReasonReg := dasicsFaultReasonFromRob
+  }
 
   // Distributed CSR update req
   //
@@ -1374,7 +1395,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     val difftest = Module(new DifftestCSRState)
     difftest.io.clock := clock
     difftest.io.coreid := csrio.hartId
-    difftest.io.priviledgeMode := priviledgeMode
+    difftest.io.privilegeMode := privilegeMode
     difftest.io.mstatus := mstatus
     difftest.io.sstatus := mstatus & sstatusRmask
     difftest.io.ustatus := mstatus & ustatusRmask
@@ -1400,15 +1421,25 @@ class CSR(implicit p: Parameters) extends FunctionUnit with HasCSRConst with PMP
     difftest.io.sedeleg := sedeleg
     difftest.io.medeleg := medeleg
     difftest.io.sideleg := sideleg
-    difftest.io.dsmcfg := dasicsMainCfg & dasicsSMainCfgMask
-    difftest.io.dsmbound0 := dasicsSMainBoundLo
-    difftest.io.dsmbound1 := dasicsSMainBoundHi
-    difftest.io.dumcfg := dasicsMainCfg & dasicsUMainCfgMask
-    difftest.io.dumbound0 := dasicsUMainBoundLo
-    difftest.io.dumbound1 := dasicsUMainBoundHi
-    difftest.io.dmaincall := dasicsMainCall
-    difftest.io.dretpc := dasicsReturnPc
-    difftest.io.dretpcfz := dasicsAZoneReturnPc
+    difftest.io.dasicsMainCfg := dasicsMainCfg
+    difftest.io.dasicsSMBoundLo := dasicsSMainBoundLo
+    difftest.io.dasicsSMBoundHi := dasicsSMainBoundHi
+    difftest.io.dasicsUMBoundLo := dasicsUMainBoundLo
+    difftest.io.dasicsUMBoundHi := dasicsUMainBoundHi
+    difftest.io.dasicsLibCfg := ZeroExt(VecInit(dasicsMemBoundRegs.map(_.cfg)).asUInt, XLEN)
+    for (i <- 0 until NumDasicsMemBounds) {
+      difftest.io.dasicsLibBound(i * 2) := dasicsMemBoundRegs(i).boundLo
+      difftest.io.dasicsLibBound(i * 2 + 1) := dasicsMemBoundRegs(i).boundHi
+    }
+    difftest.io.dasicsJumpCfg := ZeroExt(VecInit(dasicsJumpBoundRegs.map(_.cfg.asTypeOf(UInt(16.W)))).asUInt, XLEN)
+    for (i <- 0 until NumDasicsJumpBounds) {
+      difftest.io.dasicsJumpBound(i * 2) := dasicsJumpBoundRegs(i).boundLo
+      difftest.io.dasicsJumpBound(i * 2 + 1) := dasicsJumpBoundRegs(i).boundHi
+    }
+    difftest.io.dasicsMainCall := dasicsMainCallReg
+    difftest.io.dasicsReturnPC := dasicsReturnPcReg
+    difftest.io.dasicsAZoneReturnPC := dasicsAZoneReturnPcReg
+    difftest.io.dasicsFReason  := ZeroExt(dasicsFReasonReg, XLEN)
     difftest.io.upkru := upkru
     difftest.io.spkrs := spkrs
     difftest.io.spkctl := spkctl
