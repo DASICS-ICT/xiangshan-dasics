@@ -25,6 +25,7 @@ import utils._
 import xiangshan._
 import xiangshan.backend.exu.ExuConfig
 import xiangshan.frontend.FtqPtr
+import xiangshan.backend.fu.DasicsConst
 
 class RobPtr(implicit p: Parameters) extends CircularQueuePtr[RobPtr](
   p => p(XSCoreParamsKey).RobSize
@@ -155,10 +156,11 @@ class RobEnqPtrWrapper(implicit p: Parameters) extends XSModule with HasCircular
 
 }
 
-class RobExceptionInfo(implicit p: Parameters) extends XSBundle {
+class RobExceptionInfo(implicit p: Parameters) extends XSBundle with DasicsConst{
   // val valid = Bool()
   val robIdx = new RobPtr
   val exceptionVec = ExceptionVec()
+  val dasicsFaultReason = UInt(DasicsFaultWidth.W)
   val flushPipe = Bool()
   val replayInst = Bool() // redirect to that inst itself
   val singleStep = Bool() // TODO add frontend hit beneath
@@ -513,6 +515,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.exception.bits.uop := RegEnable(debug_deqUop, exceptionHappen)
   io.exception.bits.uop.ctrl.commitType := RegEnable(deqDispatchData.commitType, exceptionHappen)
   io.exception.bits.uop.cf.exceptionVec := RegEnable(exceptionDataRead.bits.exceptionVec, exceptionHappen)
+  io.exception.bits.uop.cf.dasicsFaultReason := RegEnable(exceptionDataRead.bits.dasicsFaultReason, exceptionHappen)
   io.exception.bits.uop.ctrl.singleStep := RegEnable(exceptionDataRead.bits.singleStep, exceptionHappen)
   io.exception.bits.uop.cf.crossPageIPFFix := RegEnable(exceptionDataRead.bits.crossPageIPFFix, exceptionHappen)
   io.exception.bits.isInterrupt := RegEnable(intrEnable, exceptionHappen)
@@ -859,6 +862,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     exceptionGen.io.enq(i).bits.exceptionVec := ExceptionNO.selectFrontend(io.enq.req(i).bits.cf.exceptionVec)
     exceptionGen.io.enq(i).bits.flushPipe := io.enq.req(i).bits.ctrl.flushPipe
     exceptionGen.io.enq(i).bits.replayInst := false.B
+    exceptionGen.io.enq(i).bits.dasicsFaultReason := io.enq.req(i).bits.cf.dasicsFaultReason
     XSError(canEnqueue(i) && io.enq.req(i).bits.ctrl.replayInst, "enq should not set replayInst")
     exceptionGen.io.enq(i).bits.singleStep := io.enq.req(i).bits.ctrl.singleStep
     exceptionGen.io.enq(i).bits.crossPageIPFFix := io.enq.req(i).bits.cf.crossPageIPFFix
@@ -874,6 +878,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     exc_wb.valid                := wb.valid
     exc_wb.bits.robIdx          := wb.bits.uop.robIdx
     exc_wb.bits.exceptionVec    := ExceptionNO.selectByExu(wb.bits.uop.cf.exceptionVec, configs)
+    exc_wb.bits.dasicsFaultReason  := wb.bits.uop.cf.dasicsFaultReason
     exc_wb.bits.flushPipe       := configs.exists(_.flushPipe).B && wb.bits.uop.ctrl.flushPipe
     exc_wb.bits.replayInst      := configs.exists(_.replayInst).B && wb.bits.uop.ctrl.replayInst
     exc_wb.bits.singleStep      := false.B

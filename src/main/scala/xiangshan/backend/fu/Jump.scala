@@ -43,15 +43,15 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
   })
   val (src1, pc, immMin, func, isRVC) = (io.src, io.pc, io.immMin, io.func, io.isRVC)
 
-  val isJalr = JumpOpType.jumpOpisJalr(func)
-  val isAuipc = JumpOpType.jumpOpisAuipc(func)
-  // Dasicscall.J needs a special case, while Dasicscall.JR is included in Jalr
-  val isDasicscallJ = JumpOpType.jumpOpisDasicscallJ(func)
+  val isJalr = JumpOpType.jumpOpIsJalr(func)
+  val isAuipc = JumpOpType.jumpOpIsAuipc(func)
+  val isDasicsCallJ = JumpOpType.jumpOpIsDasicscallJ(func)
+  val isDasicsCallJR = JumpOpType.jumpOpIsDasicscallJR(func)
   val offset = SignExt(ParallelMux(Seq(
-    isJalr -> ImmUnion.I.toImm32(immMin),
+    (isJalr || isDasicsCallJR) -> ImmUnion.I.toImm32(immMin),
     isAuipc -> ImmUnion.U.toImm32(immMin),
-    isDasicscallJ -> ImmUnion.DIJ.toImm32(immMin),
-    !(isJalr || isAuipc || isDasicscallJ) -> ImmUnion.J.toImm32(immMin)
+    isDasicsCallJ -> ImmUnion.DIJ.toImm32(immMin),
+    !(isJalr || isAuipc || isDasicsCallJ || isDasicsCallJR) -> ImmUnion.J.toImm32(immMin)
   )), XLEN)
 
   val snpc = Mux(isRVC, pc + 2.U, pc + 4.U)
@@ -61,7 +61,7 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
   // The target address is obtained by adding the sign-extended 12-bit I-immediate to the register rs1,
   // then setting the least-significant bit of the result to zero.
   io.target := Cat(target(XLEN - 1, 1), false.B)
-  io.result := Mux(JumpOpType.jumpOpisAuipc(func), target, snpc)
+  io.result := Mux(JumpOpType.jumpOpIsAuipc(func), target, snpc)
   io.isAuipc := isAuipc
 }
 

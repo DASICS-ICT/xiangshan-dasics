@@ -159,7 +159,7 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
   val (jump_valid, jump_func) = (jump.io.in.valid, jump.io.in.bits.uop.ctrl.fuOpType)
 
   // Activate csr module for DASICSCALL instructions
-  when (jump_valid && JumpOpType.jumpOpisDasicscall(jump_func)) {
+  when (jump_valid && JumpOpType.jumpOpIsDasicscall(jump_func)) {
     csr.io.in.valid := true.B
     csr.io.in.bits.src(0) := SignExt(jump.io.in.bits.uop.cf.pc, XLEN) + 4.U // snpc, not RVC
     // Write DasicsReturnPC

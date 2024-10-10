@@ -22,8 +22,9 @@ import chisel3.util._
 import utils._
 import xiangshan.ExceptionNO._
 import xiangshan._
-import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsCheckFault}
+import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsFaultReason}
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
+import xiangshan.backend.fu.util.HasCSRConst
 
 // Store Pipeline Stage 0
 // Generate addr, use addr to query DCache and DTLB
@@ -109,10 +110,10 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   val s1_mmio = is_mmio_cbo
   val s1_exception = ExceptionNO.selectByFu(io.out.bits.uop.cf.exceptionVec, staCfg).asUInt.orR
 
-  //dasics check
-  io.dasicsReq.valid := io.out.fire()  //TODO: temporarily assignment
+  //Dasics check
+  io.dasicsReq.valid := io.out.fire  //TODO: temporarily assignment
   io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
-  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.dasicsUntrusted
+  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.write
 
   io.in.ready := true.B
@@ -143,8 +144,11 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   io.out.bits.uop.cf.exceptionVec(storePageFault) := io.dtlbResp.bits.excp(0).pf.st
   io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.dtlbResp.bits.excp(0).af.st
 
-  io.out.bits.uop.cf.exceptionVec(pkuStorePageFault) := io.dtlbResp.bits.excp(0).pkf.st &&  io.dtlbResp.bits.excp(0).pkf.isUser
-  io.out.bits.uop.cf.exceptionVec(pksStorePageFault) := io.dtlbResp.bits.excp(0).pkf.st && !io.dtlbResp.bits.excp(0).pkf.isUser
+  when (io.dtlbResp.bits.excp(0).pkf.st) {
+    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dtlbResp.bits.excp(0).pkf.isUser
+    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || !io.dtlbResp.bits.excp(0).pkf.isUser
+    io.out.bits.uop.cf.dasicsFaultReason := Mux(DasicsFaultReason.StoreMPKFault > io.in.bits.uop.cf.dasicsFaultReason, DasicsFaultReason.StoreMPKFault, io.in.bits.uop.cf.dasicsFaultReason)
+  }
 
   io.lsq.valid := io.in.valid
   io.lsq.bits := io.out.bits
@@ -160,7 +164,7 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   XSPerfAccumulate("tlb_miss_first_issue", io.in.fire && s1_tlb_miss && io.in.bits.isFirstIssue)
 }
 
-class StoreUnit_S2(implicit p: Parameters) extends XSModule {
+class StoreUnit_S2(implicit p: Parameters) extends XSModule with HasCSRConst{
   val io = IO(new Bundle() {
     val in = Flipped(Decoupled(new LsPipelineBundle))
     val pmpResp = Flipped(new PMPRespBundle)
@@ -185,9 +189,12 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule {
   io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.in.bits.uop.cf.exceptionVec(storeAccessFault) || pmp.st
   io.out.valid := io.in.valid && (!is_mmio || s2_exception)
 
-  //dasics store access fault
-  io.out.bits.uop.cf.exceptionVec(dasicsSStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.SWriteDasicsFault
-  io.out.bits.uop.cf.exceptionVec(dasicsUStoreAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.UWriteDasicsFault
+  //Dasics store access fault
+  when (io.dasicsResp.dasics_fault > io.in.bits.uop.cf.dasicsFaultReason) { // DasicsFaultReason.StoreDasicsFault
+    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dasicsResp.mode === ModeU
+    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || io.dasicsResp.mode === ModeS
+    io.out.bits.uop.cf.dasicsFaultReason := io.dasicsResp.dasics_fault
+  }
 }
 
 class StoreUnit_S3(implicit p: Parameters) extends XSModule {
