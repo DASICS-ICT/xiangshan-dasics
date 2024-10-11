@@ -124,7 +124,7 @@
 //  statReg := (state =/= s_idle)
 //
 //  out := DontCare
-//  out.metaData.ar.bits.prot  := AXI4Parameters.PROT_PRIVILEDGED
+//  out.metaData.ar.bits.prot  := AXI4Parameters.PROT_PRIVILEGED
 //  out.metaData.ar.bits.id    := 0.U
 //  out.metaData.ar.bits.size := "b10".U // 32 bit
 //  out.metaData.ar.bits.burst := AXI4Parameters.BURST_INCR

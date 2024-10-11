@@ -149,8 +149,8 @@ package object xiangshan {
   }
 
   object ExceptionVec {
-    // 16 RV exception + 8 dasics excepiton + 4 mpk exception
-    def apply() = Vec(16 + 8 + 4, Bool())
+    // 16 RV exception + 2 Dasics exception
+    def apply() = Vec(16 + 2, Bool())
   }
 
   object PMAMode {
@@ -203,20 +203,23 @@ package object xiangshan {
   }
 
   // jump
-  object JumpOpType {
-    def jal  = "b000".U
-    def jalr = "b001".U
-    def auipc = "b010".U
-    def dasicscall_j = "b100".U   // this would split into a dasicscall_j & a csrw
-    def dasicscall_jr = "b101".U  // this would split into a jalr & a csrw
-//    def call = "b11_011".U
-//    def ret  = "b11_100".U
-    def jumpOpisJump(op: UInt) = !op(1)
-    def jumpOpisJalr(op: UInt) = op(0)
-    def jumpOpisAuipc(op: UInt) = op(1)
-    def jumpOpisDasicscall(op: UInt) = op(2)
-    def jumpOpisDasicscallJ(op: UInt) = op === dasicscall_j
-  }
+object JumpOpType {
+  def jal: UInt = "b00".U
+  def jalr: UInt = "b01".U
+  def auipc: UInt = "b10".U
+  def prefetch_i: UInt = "b11".U
+  def dasicscall_j: UInt = "b100".U   // this would split into a dasicscall_j & a csrw
+  def dasicscall_jr: UInt = "b101".U  // this would split into a jalr & a csrw
+  //    def call = "b11_011".U
+  //    def ret  = "b11_100".U
+  def jumpOpIsJal(op: UInt): Bool = op === jal
+  def jumpOpIsJalr(op: UInt): Bool = op === jalr
+  def jumpOpIsAuipc(op: UInt): Bool = op === auipc
+  def jumpOpIsPrefetch_I(op: UInt): Bool = op === prefetch_i
+  def jumpOpIsDasicscall(op: UInt): Bool = (op === dasicscall_j || op === dasicscall_jr)
+  def jumpOpIsDasicscallJR(op: UInt): Bool = op === dasicscall_jr
+  def jumpOpIsDasicscallJ(op: UInt): Bool = op === dasicscall_j
+}
 
   object FenceOpType {
     def fence  = "b10000".U
@@ -533,32 +536,26 @@ package object xiangshan {
     def storePageFault      = 15
 
     //exception 16-23 is reserve
-
-    def dasicsExcOffset = 8
-    //  dasics excetption       number    offset
-    def dasicsUIntrAccessFault = 24 - dasicsExcOffset
-    def dasicsSIntrAccessFault = 25 - dasicsExcOffset
-
-    def dasicsULoadAccessFault = 26 - dasicsExcOffset
-    def dasicsSLoadAccessFault = 27 - dasicsExcOffset
-
-    def dasicsUStoreAccessFault = 28 - dasicsExcOffset
-    def dasicsSStoreAccessFault = 29 - dasicsExcOffset
-
-    def dasicsUEcallAccessFault = 30 - dasicsExcOffset
-    def dasicsSEcallAccessFault = 31 - dasicsExcOffset
-
-    def mpkExcOffset = 8
-    //  mpk exception       number   offset
-    def pkuLoadPageFault    = 32 - mpkExcOffset
-    def pkuStorePageFault   = 33 - mpkExcOffset
-    def pksLoadPageFault    = 34 - mpkExcOffset
-    def pksStorePageFault   = 35 - mpkExcOffset
+    def DasicsExcOffset = 8
+    //  Dasics excetption       number    offset
+    def dasicsUCheckFault = 24 - DasicsExcOffset
+    def dasicsSCheckFault = 25 - DasicsExcOffset
+    
+    // def dasicsUJumpFault = 24 - DasicsExcOffset
+    // def dasicsSJumpFault = 25 - DasicsExcOffset
+    // def dasicsULoadAccessFault = 26 - DasicsExcOffset
+    // def dasicsSLoadAccessFault = 27 - DasicsExcOffset
+    // def dasicsUStoreAccessFault = 28 - DasicsExcOffset
+    // def dasicsSStoreAccessFault = 29 - DasicsExcOffset
+    // def dasicsUEcallAccessFault = 30 - DasicsExcOffset
+    // def dasicsSEcallAccessFault = 31 - DasicsExcOffset
+    // def pkuLoadPageFault    = 32 - DasicsExcOffset
+    // def pkuStorePageFault   = 33 - DasicsExcOffset
+    // def pksLoadPageFault    = 34 - DasicsExcOffset
+    // def pksStorePageFault   = 35 - DasicsExcOffset
 
     def prioritiesAll = Seq(
-      // DASICS Instruction fault actually belongs to the last branch instr
-      dasicsUIntrAccessFault,
-      dasicsSIntrAccessFault,
+      // Dasics Instruction fault actually belongs to the last branch instr
       breakPoint, // TODO: different BP has different priority
       instrPageFault,
       instrAccessFault,
@@ -571,18 +568,11 @@ package object xiangshan {
       loadPageFault,
       storeAccessFault,
       loadAccessFault,
-      dasicsULoadAccessFault,
-      dasicsSLoadAccessFault,
-      dasicsUStoreAccessFault,
-      dasicsSStoreAccessFault,
-      dasicsUEcallAccessFault,
-      dasicsSEcallAccessFault,
-      pksLoadPageFault,
-      pksStorePageFault,
-      pkuLoadPageFault,
-      pkuStorePageFault
+      dasicsSCheckFault,
+      dasicsUCheckFault
     )
     def prioritiesRegular = Seq(
+      // Dasics Instruction fault actually belongs to the last branch instr
       breakPoint, // TODO: different BP has different priority
       instrPageFault,
       instrAccessFault,
@@ -602,24 +592,12 @@ package object xiangshan {
       instrAccessFault,
       illegalInstr,
       instrPageFault,
-      dasicsUIntrAccessFault,
-      dasicsSIntrAccessFault
+      dasicsSCheckFault,
+      dasicsUCheckFault
     )
     def dasicsSet = Seq(
-      dasicsUIntrAccessFault,
-      dasicsSIntrAccessFault,
-      dasicsULoadAccessFault,
-      dasicsSLoadAccessFault,
-      dasicsUStoreAccessFault,
-      dasicsSStoreAccessFault,
-      dasicsUEcallAccessFault,
-      dasicsSEcallAccessFault
-    )
-    def mpkSet = Seq(
-      pkuLoadPageFault,
-      pkuStorePageFault,
-      pksLoadPageFault,
-      pksStorePageFault
+      dasicsSCheckFault,
+      dasicsUCheckFault
     )
     def partialSelect(vec: Vec[Bool], select: Seq[Int]): Vec[Bool] = {
       val new_vec = Wire(ExceptionVec())
@@ -628,7 +606,6 @@ package object xiangshan {
       new_vec
     }
     def selectDasics(vec:Vec[Bool]): Vec[Bool] = partialSelect(vec, dasicsSet)
-    def selectMpk(vec:Vec[Bool]): Vec[Bool] = partialSelect(vec, mpkSet)
     def selectFrontend(vec: Vec[Bool]): Vec[Bool] = partialSelect(vec, frontendSet)
     def selectAll(vec: Vec[Bool]): Vec[Bool] = partialSelect(vec, ExceptionNO.all)
     def selectByFu(vec:Vec[Bool], fuConfig: FuConfig): Vec[Bool] =
@@ -694,6 +671,7 @@ package object xiangshan {
     writeIntRf = true,
     writeFpRf = false,
     hasRedirect = true,
+    exceptionOut = Seq(illegalInstr, dasicsUCheckFault, dasicsSCheckFault)
   )
 
   val fenceCfg = FuConfig(
@@ -713,7 +691,7 @@ package object xiangshan {
     numFpSrc = 0,
     writeIntRf = true,
     writeFpRf = false,
-    exceptionOut = Seq(illegalInstr, breakPoint, ecallU, ecallS, ecallM, dasicsUEcallAccessFault, dasicsSEcallAccessFault),
+    exceptionOut = Seq(illegalInstr, breakPoint, ecallU, ecallS, ecallM, dasicsUCheckFault, dasicsSCheckFault),
     flushPipe = true
   )
 
@@ -812,7 +790,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.loadCanAccept(uop.ctrl.fuType),
     FuType.ldu, 1, 0, writeIntRf = true, writeFpRf = true,
     latency = UncertainLatency(),
-    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault, dasicsULoadAccessFault, dasicsSLoadAccessFault, pkuLoadPageFault, pksLoadPageFault),
+    exceptionOut = Seq(loadAddrMisaligned, loadAccessFault, loadPageFault, dasicsUCheckFault, dasicsSCheckFault),
     flushPipe = true,
     replayInst = true,
     hasLoadError = true,
@@ -825,7 +803,7 @@ package object xiangshan {
     (uop: MicroOp) => FuType.storeCanAccept(uop.ctrl.fuType),
     FuType.stu, 1, 0, writeIntRf = false, writeFpRf = false,
     latency = UncertainLatency(),
-    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault, dasicsUStoreAccessFault, dasicsSStoreAccessFault, pkuStorePageFault, pksStorePageFault),
+    exceptionOut = Seq(storeAddrMisaligned, storeAccessFault, storePageFault, dasicsUCheckFault, dasicsSCheckFault),
     trigger = true,
   )
 

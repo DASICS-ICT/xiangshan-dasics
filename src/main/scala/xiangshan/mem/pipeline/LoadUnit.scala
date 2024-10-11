@@ -22,10 +22,11 @@ import chisel3.util._
 import utils._
 import xiangshan.ExceptionNO._
 import xiangshan._
-import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsCheckFault}
+import xiangshan.backend.fu.{PMPRespBundle,DasicsReqBundle,DasicsRespBundle,DasicsOp,DasicsFaultReason}
 import xiangshan.backend.fu.util.SdtrigExt
 import xiangshan.cache._
 import xiangshan.cache.mmu.{TlbCmd, TlbReq, TlbRequestIO, TlbResp}
+import xiangshan.backend.fu.util.HasCSRConst
 
 class LoadToLsqIO(implicit p: Parameters) extends XSBundle {
   val loadIn = ValidIO(new LqWriteBundle)
@@ -218,10 +219,10 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.loadViolationQueryReq.bits.paddr := s1_paddr_dup_lsu
   io.loadViolationQueryReq.bits.uop := s1_uop
 
-  //dasics check
-  io.dasicsReq.valid := io.out.fire() //TODO: temporarily assignment
+  //Dasics check
+  io.dasicsReq.valid := io.out.fire //TODO: temporarily assignment
   io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
-  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.dasicsUntrusted
+  io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.read
 
   // Generate forwardMaskFast to wake up insts earlier
@@ -250,11 +251,14 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
 
   // current ori test will cause the case of ldest == 0, below will be modifeid in the future.
   // af & pf exception were modified
-  io.out.bits.uop.cf.exceptionVec(loadPageFault) := io.dtlbResp.bits.excp(0).pf.ld
+  io.out.bits.uop.cf.exceptionVec(loadPageFault) := (io.dtlbResp.bits.excp(0).pf.ld || io.in.bits.uop.cf.exceptionVec(loadPageFault))
   io.out.bits.uop.cf.exceptionVec(loadAccessFault) := io.dtlbResp.bits.excp(0).af.ld
-
-  io.out.bits.uop.cf.exceptionVec(pkuLoadPageFault) := io.dtlbResp.bits.excp(0).pkf.ld &&  io.dtlbResp.bits.excp(0).pkf.isUser
-  io.out.bits.uop.cf.exceptionVec(pksLoadPageFault) := io.dtlbResp.bits.excp(0).pkf.ld && !io.dtlbResp.bits.excp(0).pkf.isUser
+  
+  when (io.dtlbResp.bits.excp(0).pkf.ld) {
+    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dtlbResp.bits.excp(0).pkf.isUser
+    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || !io.dtlbResp.bits.excp(0).pkf.isUser
+    io.out.bits.uop.cf.dasicsFaultReason := Mux(DasicsFaultReason.LoadMPKFault > io.in.bits.uop.cf.dasicsFaultReason, DasicsFaultReason.LoadMPKFault, io.in.bits.uop.cf.dasicsFaultReason)
+  }
 
   io.out.bits.ptwBack := io.dtlbResp.bits.ptwBack
   io.out.bits.rsIdx := io.in.bits.rsIdx
@@ -273,7 +277,7 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
 
 // Load Pipeline Stage 2
 // DCache resp
-class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
+class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper with HasCSRConst{
   val io = IO(new Bundle() {
     val in = Flipped(Decoupled(new LsPipelineBundle))
     val out = Decoupled(new LsPipelineBundle)
@@ -312,16 +316,20 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
   // if such exception happen, that inst and its exception info
   // will be force writebacked to rob
   val s2_exception_vec = WireInit(io.in.bits.uop.cf.exceptionVec)
-  s2_exception_vec(loadAccessFault) := io.in.bits.uop.cf.exceptionVec(loadAccessFault) || pmp.ld
+  val s2_exception_dfreason = WireInit(io.in.bits.uop.cf.dasicsFaultReason)
+  s2_exception_vec(loadAccessFault) := (io.in.bits.uop.cf.exceptionVec(loadAccessFault) || pmp.ld)
   // soft prefetch will not trigger any exception (but ecc error interrupt may be triggered)
   when (s2_is_prefetch) {
     s2_exception_vec := 0.U.asTypeOf(s2_exception_vec.cloneType)
   }
   val s2_exception = ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR
 
-  //dasics load access fault
-  s2_exception_vec(dasicsULoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.UReadDascisFault
-  s2_exception_vec(dasicsSLoadAccessFault) := io.dasicsResp.dasics_fault === DasicsCheckFault.SReadDascisFault 
+  //Dasics load access fault  
+  when (io.dasicsResp.dasics_fault > io.in.bits.uop.cf.dasicsFaultReason) { // DasicsFaultReason.LoadDasicsFault
+    s2_exception_vec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dasicsResp.mode === ModeU
+    s2_exception_vec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || io.dasicsResp.mode === ModeS
+    s2_exception_dfreason := io.dasicsResp.dasics_fault
+  }
 
   // writeback access fault caused by ecc error / bus error
   //
@@ -435,7 +443,7 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper {
   io.out.bits.mmio := s2_mmio
   io.out.bits.uop.ctrl.flushPipe := s2_mmio && io.sentFastUop
   io.out.bits.uop.cf.exceptionVec := s2_exception_vec // cache error not included
-
+  io.out.bits.uop.cf.dasicsFaultReason := s2_exception_dfreason
   // For timing reasons, sometimes we can not let
   // io.out.bits.miss := s2_cache_miss && !s2_exception && !fullForward
   // We use io.dataForwarded instead. It means:

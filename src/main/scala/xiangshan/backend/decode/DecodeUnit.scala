@@ -636,6 +636,10 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   val isMove = BitPat("b000000000000_?????_000_?????_0010011") === ctrl_flow.instr
   cs.isMove := isMove && ctrl_flow.instr(RD_MSB, RD_LSB) =/= 0.U && !io.csrCtrl.singlestep && io.csrCtrl.move_elim_enable
 
+  // dasics decode check
+  val dasicsEn = io.csrCtrl.dasics_enable
+  val illegalDasics = ((ctrl_flow.instr === DASICSCALL_JR || ctrl_flow.instr === DASICSCALL_J) && (!dasicsEn || ctrl_flow.dasicsUntrusted)) // no dasicscall when dasics not enable / in untrusted zone 
+
   // read src1~3 location
   cs.lsrc(0) := ctrl_flow.instr(RS1_MSB, RS1_LSB)
   cs.lsrc(1) := ctrl_flow.instr(RS2_MSB, RS2_LSB)

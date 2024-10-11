@@ -168,7 +168,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
   atomicsUnit.io.out.ready := ldOut0.ready
   loadUnits.head.io.ldout.ready := ldOut0.ready
   when(atomicsUnit.io.out.valid){
-    ldOut0.bits.uop.cf.exceptionVec := 0.U(28.W).asBools // exception will be writebacked via store wb port
+    ldOut0.bits.uop.cf.exceptionVec := 0.U.asTypeOf(ExceptionVec())// exception will be writebacked via store wb port
   }
 
   val ldExeWbReqs = ldOut0 +: loadUnits.tail.map(_.io.ldout)
@@ -251,12 +251,12 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     dtlb_st.foreach(_.ptw.resp.valid := ptw_resp_v && Cat(ptw_resp_next.vector.drop(ld_tlb_ports)).orR)
   }
 
-
   val memDasicsReq  = storeUnits.map(_.io.dasicsReq) ++ loadUnits.map(_.io.dasicsReq)
   val memDasicsResp = storeUnits.map(_.io.dasicsResp) ++ loadUnits.map(_.io.dasicsResp)
 
   memDasicsResp.map{resp =>
-    resp.dasics_fault := DasicsCheckFault.noDasicsFault
+    resp.mode := csrCtrl.mode
+    resp.dasics_fault := DasicsFaultReason.noDasicsFault
   }
 
   if(HasDasics){

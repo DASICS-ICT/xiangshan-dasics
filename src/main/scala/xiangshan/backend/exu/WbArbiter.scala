@@ -19,7 +19,7 @@ package xiangshan.backend.exu
 import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
-import difftest.{DifftestFpWriteback, DifftestIntWriteback}
+import difftest._
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
