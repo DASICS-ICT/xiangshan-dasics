@@ -825,8 +825,6 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.customCtrl.distribute_csr.w.bits.data := wdata
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
 
-  csrio.customCtrl.mode := privilegeMode
-
   // Fix Mip/Sip/Uip write
   val fixMapping = Map(
     MaskedRegMap(Mip, mipReg.asUInt, mipFixMask),
@@ -1193,8 +1191,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     hasDasicsULoadFault,
     hasDasicsSStoreFault,
     hasDasicsUStoreFault,
+    hasDasicsSJumpFault,
     hasDasicsUJumpFault,
-    hasDasicsSJumpFault
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
     val tval = Mux(
