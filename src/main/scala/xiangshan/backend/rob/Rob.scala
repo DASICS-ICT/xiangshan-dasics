@@ -20,6 +20,7 @@ import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
 import difftest._
+import firrtl.Utils.False
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
@@ -604,6 +605,21 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       else {
         io.commits.walkValid(i) := false.B
       }
+    }
+
+    val commit_debug = false
+
+    when(io.commits.isCommit && io.commits.commitValid(i) && commit_debug.B){
+      printf("[%d]retired pc %x wen %d ldest %d pdest %x old_pdest %x data %x fflags: %b\n",
+        GTimer(),
+        debug_microOp(deqPtrVec(i).value).cf.pc,
+        io.commits.info(i).rfWen,
+        io.commits.info(i).ldest,
+        io.commits.info(i).pdest,
+        io.commits.info(i).old_pdest,
+        debug_exuData(deqPtrVec(i).value),
+        fflagsDataRead(i)
+      )
     }
 
     XSInfo(io.commits.isCommit && io.commits.commitValid(i),
