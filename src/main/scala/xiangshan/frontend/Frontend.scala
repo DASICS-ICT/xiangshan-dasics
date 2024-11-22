@@ -21,7 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
-import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger, DasicsBranchChecker, DasicsFaultReason}
+import xiangshan.backend.fu.{PFEvent, PMP, PMPChecker,PMPReqBundle, DasicsTagger, DasicsJumpChecker, DasicsFaultReason}
 import xiangshan.cache.mmu._
 import xiangshan.frontend.icache._
 
@@ -108,13 +108,13 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsTagger.io.addr := ifu.io.dasics.startAddr
   ifu.io.dasics.notTrusted := dasicsTagger.io.notTrusted
   // dasics branch checker
-  val dasicsBrChecker: DasicsBranchChecker = Module(new DasicsBranchChecker())
-  dasicsBrChecker.io.distribute_csr := csrCtrl.distribute_csr
-  dasicsBrChecker.io.mode := tlbCsr.priv.imode
-  dasicsBrChecker.io.valid := ifu.io.dasics.lastBranch.valid
-  dasicsBrChecker.io.lastBranch := ifu.io.dasics.lastBranch.bits
-  dasicsBrChecker.io.target := ifu.io.dasics.startAddr
-  ifu.io.dasics.resp := dasicsBrChecker.io.resp
+  val dasicsJChecker: DasicsJumpChecker = Module(new DasicsJumpChecker())
+  dasicsJChecker.io.distribute_csr := csrCtrl.distribute_csr
+  dasicsJChecker.io.mode := tlbCsr.priv.imode
+  dasicsJChecker.io.valid := ifu.io.dasics.lastJump.valid
+  dasicsJChecker.io.lastJump := ifu.io.dasics.lastJump.bits
+  dasicsJChecker.io.target := ifu.io.dasics.startAddr
+  ifu.io.dasics.resp := dasicsJChecker.io.resp
   }
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))

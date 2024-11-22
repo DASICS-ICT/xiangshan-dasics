@@ -62,7 +62,7 @@ class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
   val startAddr: UInt = Output(UInt(VAddrBits.W))
   val notTrusted: Vec[Bool] = Input(Vec(FetchWidth * 2, Bool()))
   // for branch checker
-  val lastBranch = ValidIO(UInt(VAddrBits.W))
+  val lastJump = ValidIO(UInt(VAddrBits.W))
   val resp = Flipped(new DasicsRespBundle)
 }
 
@@ -217,8 +217,8 @@ class NewIFU(implicit p: Parameters) extends XSModule
     f1_dasics_tag.zipWithIndex.foreach { case (tag, i) => tag := io.dasics.notTrusted(i * 2) }
   }
   // for branch checker
-  io.dasics.lastBranch.valid := f1_ftq_req.lastBranch.valid
-  io.dasics.lastBranch.bits := f1_ftq_req.lastBranch.bits
+  io.dasics.lastJump.valid := f1_ftq_req.lastJump.valid
+  io.dasics.lastJump.bits := f1_ftq_req.lastJump.bits
   val f1_dasics_br_resp = Wire(new DasicsRespDataBundle)
     f1_dasics_br_resp.dasics_fault := io.dasics.resp.dasics_fault
     f1_dasics_br_resp.mode := io.dasics.resp.mode
@@ -632,7 +632,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.triggered   := f3_triggered
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
   io.toIbuffer.bits.dasicsBrResp  := f3_dasics_br_resp
-  io.toIbuffer.bits.lastBranch := f3_ftq_req.lastBranch.bits
+  io.toIbuffer.bits.lastJump := f3_ftq_req.lastJump.bits
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask

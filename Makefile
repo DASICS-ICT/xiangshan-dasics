@@ -24,7 +24,7 @@ MEM_GEN = ./scripts/vlsi_mem_gen
 
 SIMTOP  = top.SimTop
 IMAGE  ?= temp
-CONFIG ?= DefaultConfig
+CONFIG ?= MinimalConfig
 NUM_CORES ?= 1
 ABS_WORK_DIR := $(shell pwd)
 # VCS sim options

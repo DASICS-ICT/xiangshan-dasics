@@ -135,7 +135,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
   // Dasics Exception Reason
   val dasicsFaultReason = UInt(DasicsFaultWidth.W) 
   // info of branch fault by last branch
-  val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
+  val lastJump = ValidUndirectioned(UInt(VAddrBits.W))
 }
 
 

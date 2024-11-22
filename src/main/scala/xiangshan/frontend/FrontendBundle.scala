@@ -39,7 +39,7 @@ class FetchRequestBundle(implicit p: Parameters) extends XSBundle with HasICache
   val ftqOffset       = ValidUndirectioned(UInt(log2Ceil(PredictWidth).W))
 
   // last branch for dasics check
-  val lastBranch: ValidUndirectioned[UInt] = ValidUndirectioned(UInt(VAddrBits.W))
+  val lastJump: ValidUndirectioned[UInt] = ValidUndirectioned(UInt(VAddrBits.W))
 
   def crossCacheline =  startAddr(blockOffBits - 1) === 1.U
 
@@ -128,7 +128,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val triggered    = Vec(PredictWidth, new TriggerCf)
   val dasicsUntrusted = Vec(PredictWidth, Bool())
   val dasicsBrResp = new DasicsRespDataBundle  // last branch to this instr block is illegal
-  val lastBranch: UInt = UInt(VAddrBits.W)
+  val lastJump: UInt = UInt(VAddrBits.W)
 }
 
 // class BitWiseUInt(val width: Int, val init: UInt) extends Module {

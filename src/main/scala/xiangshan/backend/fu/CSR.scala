@@ -25,6 +25,7 @@ import utils.MaskedRegMap.WritableMask
 import utils._
 import xiangshan.ExceptionNO._
 import xiangshan._
+import xiangshan.backend.fu._
 import xiangshan.backend.fu.util._
 import xiangshan.cache._
 
@@ -336,33 +337,29 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val pmaMapping = pmp_gen_mapping(pma_init, NumPMA, PmacfgBase, PmaaddrBase, pma)
 
   // DASICS Mapping
-  val dasicsMainCfg: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsSMainCfgMask: UInt = "h3ff".U(XLEN.W)
-  val dasicsUMainCfgMask: UInt = "h3e".U(XLEN.W)
-  val dasicsSMainBoundLo, dasicsSMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsUMainBoundLo, dasicsUMainBoundHi = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsSMainBound = RegInit(UInt(XLEN.W), 0.U)
+  val dasicsUMainBound = RegInit(UInt(XLEN.W), 0.U)
 
-  val dasicsCfg = Wire(new DasicsMainCfg())
-  dasicsCfg.gen(dasicsMainCfg)
-  csrio.customCtrl.dasics_enable := dasicsCfg.uEnable
+  val dasics_main_bound = Wire(new DasicsBound)
+  dasics_main_bound.gen(Mux(privilegeMode === ModeS,dasicsSMainBound, dasicsUMainBound))
+  val dasics_main_cfg = dasics_main_bound.cfg.asTypeOf(new DasicsMainCfg)
+
+  csrio.customCtrl.dasics_enable := dasics_main_cfg.v
 
   val dasicsMainCallReg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsFReasonReg:  UInt = RegInit(UInt(DasicsFaultWidth.W), 0.U)
   val dasicsAZoneReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
-  val dasicsMemBoundRegs: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
-  val dasicsJumpBoundRegs: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
-  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = DasicsGenMemMapping(
-    mem_init = DasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasicsMemBoundRegs
-  ) ++ DasicsGenJumpMapping(
-    jump_init = DasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs
+  val dasicsMemBoundRegs:  Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
+  val dasicsJmpBoundRegs:  Vec[DasicsEntry] = Wire(Vec(NumDasicsJmpBounds, new DasicsEntry()))  
+
+  val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = DasicsGenMapping(
+    BoundNum = NumDasicsMemBounds, BoundBase = DasicsMemBoundBase, Entries = dasicsMemBoundRegs
+  ) ++ DasicsGenMapping(
+    BoundNum = NumDasicsJmpBounds, BoundBase = DasicsJmpBoundBase, Entries = dasicsJmpBoundRegs
   ) ++ Map(
-    MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
-    MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
-    MaskedRegMap(DasicsSMainBoundHi, dasicsSMainBoundHi),
-    MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = dasicsUMainCfgMask, rmask = dasicsUMainCfgMask),
-    MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
-    MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
+    MaskedRegMap(DasicsSMainBound, dasicsSMainBound, wmask=dasics_main_bound.RegMask, rmask=dasics_main_bound.RegMask),
+    MaskedRegMap(DasicsUMainBound, dasicsUMainBound, wmask=dasics_main_bound.RegMask, rmask=dasics_main_bound.RegMask),
     MaskedRegMap(DasicsMainCall, dasicsMainCallReg),
     MaskedRegMap(DasicsReturnPc, dasicsReturnPcReg),
     MaskedRegMap(DasicsActiveZoneReturnPc, dasicsAZoneReturnPcReg),
@@ -783,12 +780,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
-  val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
-    (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
-    (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) ||
-    (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
-    (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
-    addr === DasicsLibCfgBase.U
+  val addrInDasicsBound = (addr === DasicsUMainBound.U) || (addr === DasicsSMainBound.U) ||
+                          (addr >= DasicsMemBoundBase.U) && (addr < (DasicsMemBoundBase + NumDasicsMemBounds).U) || 
+                          (addr >= DasicsJmpBoundBase.U) && (addr < (DasicsJmpBoundBase + NumDasicsJmpBounds).U) 
+  
+  val addrInDasics = (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) || addrInDasicsBound
 
 
   val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
@@ -811,7 +807,22 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
+
+  def dasicsBoundOverflow(bound: UInt): Bool = {
+     
+     val bound_class = Wire(new DasicsBound)
+     bound_class.gen(bound)
+     val base   = bound_class.base
+     val offset = bound_class.offset
+
+     val add_result = base + offset
+     add_result(VAddrBits-1) ^ base(VAddrBits-1)
+  }
+
+  val dasicsPermitted = !(CSROpType.needAccess(func) && 
+                            ((addrInProtection && isUntrusted) || 
+                             (addrInDasicsBound && wen && dasicsBoundOverflow(wdata))))
+
   val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
@@ -1008,20 +1019,20 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // raise a debug exception waiting to enter debug mode, instead of a breakpoint exception
   val raiseDebugException = !debugMode && isEbreak && ebreakEnterDebugMode
 
-  val dasics_main_cfg = Wire(new DasicsMainCfg);
-  dasics_main_cfg.gen(dasicsMainCfg);
 
+  
   val csrExceptionVec = WireInit(cfIn.exceptionVec)
   csrExceptionVec(breakPoint) := io.in.valid && isEbreak
   csrExceptionVec(ecallM) := privilegeMode === ModeM && io.in.valid && isEcall
-  csrExceptionVec(ecallS) := privilegeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasicsCfg.closeSEcallFault)
-  csrExceptionVec(ecallU) := privilegeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && dasicsCfg.closeUEcallFault)
+  csrExceptionVec(ecallS) := privilegeMode === ModeS && io.in.valid && isEcall && (!isUntrusted || isUntrusted && !dasics_main_cfg.e)
+  csrExceptionVec(ecallU) := privilegeMode === ModeU && io.in.valid && isEcall && (!isUntrusted || isUntrusted && !dasics_main_cfg.e)
 
   // handle dasics ecall fault  
-  val hasDasicsUEcallFault =  HasDasics.B && privilegeMode === ModeU && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeUEcallFault
-  csrExceptionVec(dasicsUCheckFault) := cfIn.exceptionVec(dasicsUCheckFault) || hasDasicsUEcallFault
-  val hasDasicsSEcallFault =  HasDasics.B && privilegeMode === ModeS && io.in.valid && isEcall && isUntrusted && !dasicsCfg.closeSEcallFault
+  val hasDasicsSEcallFault =  HasDasics.B && privilegeMode === ModeS && io.in.valid && isEcall && isUntrusted && dasics_main_cfg.e
   csrExceptionVec(dasicsSCheckFault) := cfIn.exceptionVec(dasicsSCheckFault) || hasDasicsSEcallFault
+  val hasDasicsUEcallFault =  HasDasics.B && privilegeMode === ModeU && io.in.valid && isEcall && isUntrusted && dasics_main_cfg.e
+  csrExceptionVec(dasicsUCheckFault) := cfIn.exceptionVec(dasicsUCheckFault) || hasDasicsUEcallFault
+
 
   // Trigger an illegal instr exception when:
   // * unimplemented csr is being read/written
@@ -1111,6 +1122,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val hasDasicsULoadFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
   val hasDasicsUStoreFault  = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
   val hasDasicsUJumpFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.JumpDasicsFault
+
   val hasDasicsSCheckFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsSCheckFault)
   val hasDasicsSLoadFault   = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
   val hasDasicsSStoreFault  = hasDasicsSCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
@@ -1196,7 +1208,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
     val tval = Mux(
-      RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
+      RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastJump.valid)),
       // for dasics fetch faults, epc is the last branch, tval is this instr
       RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
       Mux(
@@ -1260,9 +1272,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
     val dcsrNew = WireInit(dcsr.asTypeOf(new DcsrStruct))
     val debugModeNew = WireInit(debugMode)
-    val lastBranchInfo = WireInit(csrio.exception.bits.uop.cf.lastBranch)
-    val hasDasicsBrFault = (hasDasicsUJumpFault || hasDasicsSJumpFault) && lastBranchInfo.valid
-    val hasDasicsBrIntr = hasDasicsJumpIntr && lastBranchInfo.valid
+    val lastJumpInfo = WireInit(csrio.exception.bits.uop.cf.lastJump)
+    val hasDasicsJFault = (hasDasicsUJumpFault || hasDasicsSJumpFault) && lastJumpInfo.valid
+    val hasDasicsJIntr = hasDasicsJumpIntr && lastJumpInfo.valid
     when (hasDebugTrap && !debugMode) {
       import DcsrStruct._
       debugModeNew := true.B
@@ -1288,8 +1300,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       ucause := causeNO
       // for branch faults, epc is the last branch; if interrupt occurs at the same time, also rewind
       uepc := Mux(
-        hasDasicsBrFault || hasDasicsBrIntr,
-        lastBranchInfo.bits,
+        hasDasicsJFault || hasDasicsJIntr,
+        lastJumpInfo.bits,
         Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.pie.u := mstatusOld.ie.u
@@ -1299,8 +1311,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
       sepc := Mux(
-        hasDasicsBrFault || hasDasicsBrIntr,
-        lastBranchInfo.bits,
+        hasDasicsJFault || hasDasicsJIntr,
+        lastJumpInfo.bits,
         Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.spp := privilegeMode
@@ -1311,8 +1323,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     }.otherwise {
       mcause := causeNO
       mepc := Mux(
-        hasDasicsBrFault || hasDasicsBrIntr,
-        lastBranchInfo.bits,
+        hasDasicsJFault || hasDasicsJIntr,
+        lastJumpInfo.bits,
         Mux(hasInstrPageFault || hasInstrAccessFault, iexceptionPC, dexceptionPC)
       )
       mstatusNew.mpp := privilegeMode
@@ -1422,20 +1434,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     difftest.io.sedeleg := sedeleg
     difftest.io.medeleg := medeleg
     difftest.io.sideleg := sideleg
-    difftest.io.dasicsMainCfg := dasicsMainCfg
-    difftest.io.dasicsSMBoundLo := dasicsSMainBoundLo
-    difftest.io.dasicsSMBoundHi := dasicsSMainBoundHi
-    difftest.io.dasicsUMBoundLo := dasicsUMainBoundLo
-    difftest.io.dasicsUMBoundHi := dasicsUMainBoundHi
-    difftest.io.dasicsLibCfg := ZeroExt(VecInit(dasicsMemBoundRegs.map(_.cfg)).asUInt, XLEN)
+    difftest.io.dasicsSMBound := dasicsSMainBound
+    difftest.io.dasicsUMBound := dasicsUMainBound
     for (i <- 0 until NumDasicsMemBounds) {
-      difftest.io.dasicsLibBound(i * 2) := dasicsMemBoundRegs(i).boundLo
-      difftest.io.dasicsLibBound(i * 2 + 1) := dasicsMemBoundRegs(i).boundHi
+      difftest.io.dasicsMemBound(i) := dasicsMemBoundRegs(i).bound.toUInt()
     }
-    difftest.io.dasicsJumpCfg := ZeroExt(VecInit(dasicsJumpBoundRegs.map(_.cfg.asTypeOf(UInt(16.W)))).asUInt, XLEN)
-    for (i <- 0 until NumDasicsJumpBounds) {
-      difftest.io.dasicsJumpBound(i * 2) := dasicsJumpBoundRegs(i).boundLo
-      difftest.io.dasicsJumpBound(i * 2 + 1) := dasicsJumpBoundRegs(i).boundHi
+    for (i <- 0 until NumDasicsJmpBounds) {
+      difftest.io.dasicsJmpBound(i) := dasicsJmpBoundRegs(i).bound.toUInt()
     }
     difftest.io.dasicsMainCall := dasicsMainCallReg
     difftest.io.dasicsReturnPC := dasicsReturnPcReg

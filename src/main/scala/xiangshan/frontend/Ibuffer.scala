@@ -51,7 +51,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
   val dasicsBrResp = new DasicsRespDataBundle
-  val lastBranch: UInt = UInt(VAddrBits.W)
+  val lastJump: UInt = UInt(VAddrBits.W)
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
     inst   := fetch.instrs(i)
@@ -68,10 +68,10 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     dasicsUntrusted := fetch.dasicsUntrusted(i)
     dasicsBrResp.dasics_fault := DasicsFaultReason.noDasicsFault
     dasicsBrResp.mode := fetch.dasicsBrResp.mode
-    lastBranch := DontCare
+    lastJump := DontCare
     if (i == 0) { // only the first instr is a branch target
       dasicsBrResp.dasics_fault := fetch.dasicsBrResp.dasics_fault
-      lastBranch := fetch.lastBranch
+      lastJump := fetch.lastJump
     }
     this
   }
@@ -99,8 +99,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
     cf.dasicsFaultReason := dasicsBrResp.dasics_fault
-    cf.lastBranch.valid := dasicsBrResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
-    cf.lastBranch.bits := lastBranch
+    cf.lastJump.valid := dasicsBrResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
+    cf.lastJump.bits := lastJump
     cf
   }
 }

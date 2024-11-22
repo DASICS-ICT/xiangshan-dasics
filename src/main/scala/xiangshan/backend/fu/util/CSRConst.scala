@@ -76,21 +76,22 @@ trait HasCSRConst {
   val Hpmcounter30  = 0xC1E
   val Hpmcounter31  = 0xC1F
 
-  // User DASICS registers
-  val DasicsLibCfgBase = 0x880
-  val DasicsLibBoundBase = 0x890
+  // DASICS registers
+  val DasicsUMainBound = 0x9E1
+  val DasicsSMainBound = 0xBC1
+  val DasicsMemBoundBase = 0x890
+  val DasicsJmpBoundBase = 0x8C0
 
-  val DasicsMainCall  = 0x8b0
-  val DasicsReturnPc  = 0x8b1
-  val DasicsActiveZoneReturnPc = 0x8b2
-  val DasicsFReason   = 0x8b3
-  
-  val DasicsJmpCfgBase = 0x8c8
-  val DasicsJmpBoundBase = 0x8c0
+  val DasicsMainCall  = 0x8B0
+  val DasicsReturnPc  = 0x8B1
+  val DasicsActiveZoneReturnPc = 0x8B2
+  val DasicsFReason   = 0x8B3
   
   val Utimer        = 0x045
-  // User-Level MPK Register
+  // MPK Register
   val Upkru         = 0x800
+  val Spkctl        = 0x9D0
+  val Spkrs         = 0x9D1
 
   // Supervisor Trap Setup
   val Sstatus       = 0x100
@@ -122,15 +123,6 @@ trait HasCSRConst {
   /** 0x5C5-0x5E5 for cache instruction register*/
 
   val Sdsid         = 0x9C0
-
-  // Supervisor MPK Registers
-  val Spkctl        = 0x9D0
-  val Spkrs         = 0x9D1
-
-  // Supervisor DASICS Settings (for User protection)
-  val DasicsUMainCfg = 0x9E0
-  val DasicsUMainBoundLo = 0x9E2
-  val DasicsUMainBoundHi = 0x9E3
 
   // Machine Information Registers
   val Mvendorid     = 0xF11
@@ -244,11 +236,6 @@ trait HasCSRConst {
   val Dpc           = 0x7B1
   val Dscratch0     = 0x7B2
   val Dscratch1     = 0x7B3
-
-  // Machine DASICS Settings (for Supervisor protection)
-  val DasicsSMainCfg = 0xBC0
-  val DasicsSMainBoundLo = 0xBC2
-  val DasicsSMainBoundHi = 0xBC3
 
   def privEcall  = 0x000.U
   def privEbreak = 0x001.U
