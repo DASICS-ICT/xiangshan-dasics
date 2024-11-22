@@ -322,6 +322,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // They have side effects on the states of the processor before they write back
   val interrupt_safe = RegInit(VecInit(Seq.fill(RobSize)(true.B)))
 
+  val dsImpWaitSrc = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
+
+  dontTouch(dsImpWaitSrc)
+
   // data for debug
   // Warn: debug_* prefix should not exist in generated verilog.
   val debug_microOp = Mem(RobSize, new MicroOp)
@@ -376,6 +380,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val hasBlockBackward = RegInit(false.B)
   val hasNoSpecExec = RegInit(false.B)
   val doingSvinval = RegInit(false.B)
+  val InflightIWSrcCnt  = RegInit(0.U(64.W))
   // When blockBackward instruction leaves Rob (commit or walk), hasBlockBackward should be set to false.B
   // To reduce registers usage, for hasBlockBackward cases, we allow enqueue after ROB is empty.
   when (isEmpty) { hasBlockBackward:= false.B }
@@ -404,6 +409,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.enq.resp      := allocatePtrVec
   val canEnqueue = VecInit(io.enq.req.map(_.valid && io.enq.canAccept))
   val timer = GTimer()
+
+  val enqIWSrcNum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.implicitWaitSrc && io.enq.canAccept))
+
+  dontTouch(InflightIWSrcCnt)
+
   for (i <- 0 until RenameWidth) {
     // we don't check whether io.redirect is valid here since redirect has higher priority
     when (canEnqueue(i)) {
@@ -584,6 +594,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val commit_exception = exceptionDataRead.valid && !isAfter(exceptionDataRead.bits.robIdx, deqPtrVec.last)
   val commit_block = VecInit((0 until CommitWidth).map(i => !commit_w(i)))
   val allowOnlyOneCommit = commit_exception || intrBitSetReg
+  val commit_iwsrc = VecInit(deqPtrVec.map(ptr => dsImpWaitSrc(ptr.value)))
+
   // for instructions that may block others, we don't allow them to commit
   for (i <- 0 until CommitWidth) {
     // defaults: state === s_idle and instructions commit
@@ -777,6 +789,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until RenameWidth) {
     when (canEnqueue(i) && !io.redirect.valid) {
       valid(allocatePtrVec(i).value) := true.B
+      dsImpWaitSrc(allocatePtrVec(i).value) := io.enq.req(i).bits.implicitWaitSrc
     }
   }
   // dequeue/walk logic writes 6 valid, dequeue and walk will not happen at the same time
@@ -785,7 +798,19 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
     when (commitValid || walkValid) {
       valid(commitReadAddr(i)) := false.B
+      dsImpWaitSrc(commitReadAddr(i)) := false.B
     }
+  }
+
+  val doCommit = io.commits.commitValid.reduce(_||_) && io.commits.isCommit
+  val commitIWSrcNum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_iwsrc(i)))
+
+  when(io.enq.canAccept && doCommit){
+    InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum - commitIWSrcNum
+  }.elsewhen(io.enq.canAccept){
+    InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum
+  }.elsewhen(doCommit){
+    InflightIWSrcCnt := InflightIWSrcCnt - commitIWSrcNum
   }
 
   // status field: writebacked
