@@ -24,9 +24,14 @@ import utils._
 import xiangshan.backend.decode.{FusionDecodeInfo, Imm_I, Imm_LUI_LOAD, Imm_U}
 import xiangshan.backend.rob.RobPtr
 import xiangshan.backend.rename.freelist._
+import xiangshan.backend.fu.util
+import xiangshan.backend.fu.util.HasCSRConst
 import xiangshan.mem.mdp._
 
-class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
+class Rename(implicit p: Parameters) extends XSModule
+  with HasPerfEvents
+  with HasCSRConst
+{
   val io = IO(new Bundle() {
     val redirect = Flipped(ValidIO(new Redirect))
     val robCommits = Flipped(new RobCommitIO)
@@ -114,6 +119,10 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     uops(i).cf := io.in(i).bits.cf
     uops(i).ctrl := io.in(i).bits.ctrl
     uops(i).dasicsUntrusted := io.in(i).bits.cf.dasicsUntrusted
+    uops(i).implicitWaitSrc := false.B
+    io.out(i).bits.implicitWaitSrc := uops(i).implicitWaitSrc
+    uops(i).implicitWaitSink := false.B
+    io.out(i).bits.implicitWaitSink := uops(i).implicitWaitSink
 
     // update cf according to ssit result
     uops(i).cf.storeSetHit := io.ssit(i).valid
@@ -178,6 +187,28 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
 
     intRefCounter.io.allocate(i).valid := intSpecWen(i)
     intRefCounter.io.allocate(i).bits := io.out(i).bits.pdest
+
+    //Translator for dasics write bound csr
+    val addr = uops(i).ctrl.imm(11, 0)
+    val addrInDasics = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) ||
+      (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
+      addr === DasicsLibCfgBase.U
+    val isCSRWrite = uops(i).ctrl.fuOpType === CSROpType.wrt || uops(i).ctrl.fuOpType === CSROpType.wrti
+    val isDasicsWrite = !uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasics
+
+    when(isDasicsWrite){
+      io.out(i).bits.ctrl.blockBackward := false.B
+      io.out(i).bits.ctrl.noSpecExec    := false.B
+      io.out(i).bits.implicitWaitSrc    := true.B
+    }
+
+    //Translator for load/store
+    val isTargetLoad  = uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.ldu
+    val isTargetStore = uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.stu
+
+    when(isTargetLoad || isTargetStore){
+      io.out(i).bits.implicitWaitSink := true.B
+    }
   }
 
   /**

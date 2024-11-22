@@ -932,7 +932,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
   val frm_change = w_fcsr_change_rm || w_frm_change_rm
   val isXRet = valid && func === CSROpType.jmp && !isEcall && !isEbreak
-  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
+  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate
+  //|| (addrInDasics && wen)
 
   private val illegalRetTarget = WireInit(false.B)
 

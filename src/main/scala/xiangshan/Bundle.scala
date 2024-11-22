@@ -236,6 +236,8 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
+  val implicitWaitSrc = Bool()
+  val implicitWaitSink = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
