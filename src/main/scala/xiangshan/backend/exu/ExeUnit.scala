@@ -165,6 +165,7 @@ class JumpCSRExeUnit(implicit p: Parameters) extends ExeUnit(JumpCSRExeUnitCfg){
     // Write DasicsReturnPC
     csr.io.in.bits.uop.ctrl.imm := csr.DasicsReturnPc.U
     csr.io.in.bits.uop.ctrl.fuOpType := CSROpType.wrt
+    io.out.bits.uop.ctrl.flushPipe := csr.io.out.bits.uop.ctrl.flushPipe
     // Receive illegal instruction exception from CSR
     io.out.bits.uop.cf.exceptionVec(illegalInstr) := csr.io.out.bits.uop.cf.exceptionVec(illegalInstr)
   }

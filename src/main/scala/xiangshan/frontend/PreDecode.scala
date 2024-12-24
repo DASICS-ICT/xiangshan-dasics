@@ -29,17 +29,23 @@ import xiangshan.backend.fu.util.SdtrigExt
 trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst{
   def isRVC(inst: UInt) = (inst(1,0) =/= 3.U)
   def isLink(reg:UInt) = reg === 1.U || reg === 5.U
+  def isDasicscall(inst: UInt) = inst(6,0) === "b0001011".U && inst(14,13) === "b00".U
+
   def brInfo(instr: UInt) = {
     val brType::Nil = ListLookup(instr, List(BrType.notCFI), PreDecodeInst.brTable)
     val rd = Mux(isRVC(instr), instr(12), instr(11,7))
     val rs = Mux(isRVC(instr), Mux(brType === BrType.jal, 0.U, instr(11, 7)), instr(19, 15))
-    val isCall = (brType === BrType.jal && !isRVC(instr) || brType === BrType.jalr) && isLink(rd) // Only for RV64
+    val isCall = (brType === BrType.jal && !isRVC(instr) || brType === BrType.jalr) && isLink(rd) || // Only for RV64
+                  isDasicscall(instr) // isdasicscall
     val isRet = brType === BrType.jalr && isLink(rs) && !isCall
     List(brType, isCall, isRet)
   }
+
   def jal_offset(inst: UInt, rvc: Bool): UInt = {
     val rvc_offset = Cat(inst(12), inst(8), inst(10, 9), inst(6), inst(7), inst(2), inst(11), inst(5, 3), 0.U(1.W))
-    val rvi_offset = Cat(inst(31), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+    val rvi_offset = Mux( isDasicscall(inst),
+                          Cat(inst(31), inst(7), inst(20, 15), inst(11, 8), inst(30, 21), 0.U(1.W)),
+                          Cat(inst(31), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W)))
     val max_width = rvi_offset.getWidth
     SignExt(Mux(rvc, SignExt(rvc_offset, max_width), SignExt(rvi_offset, max_width)), XLEN)
   }
