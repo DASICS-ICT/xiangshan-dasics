@@ -606,6 +606,25 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       }
     }
 
+    val commit_debug = true.B
+
+    when(io.commits.isCommit && io.commits.commitValid(i) && commit_debug && (
+      debug_microOp(deqPtrVec(i).value).cf.pc === 0x10298.U || debug_microOp(deqPtrVec(i).value).cf.pc === 0x102c0.U || 
+      debug_microOp(deqPtrVec(i).value).cf.pc === 0x102f0.U || debug_microOp(deqPtrVec(i).value).cf.pc === 0x10320.U || 
+      debug_microOp(deqPtrVec(i).value).cf.pc === 0x10350.U || debug_microOp(deqPtrVec(i).value).cf.pc === 0x10380.U || 
+      debug_microOp(deqPtrVec(i).value).cf.pc === 0x103b0.U || debug_microOp(deqPtrVec(i).value).cf.pc === 0x103e0.U )){
+      printf("[%d]retired pc %x wen %d ldest %d pdest %x old_pdest %x data %x fflags: %b\n",
+        GTimer(),
+        debug_microOp(deqPtrVec(i).value).cf.pc,
+        io.commits.info(i).rfWen,
+        io.commits.info(i).ldest,
+        io.commits.info(i).pdest,
+        io.commits.info(i).old_pdest,
+        debug_exuData(deqPtrVec(i).value),
+        fflagsDataRead(i)
+      )
+    }
+
     XSInfo(io.commits.isCommit && io.commits.commitValid(i),
       "retired pc %x wen %d ldest %d pdest %x old_pdest %x data %x fflags: %b\n",
       debug_microOp(deqPtrVec(i).value).cf.pc,
