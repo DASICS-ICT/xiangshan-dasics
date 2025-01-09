@@ -38,7 +38,7 @@ import Chisel.experimental.chiselName
 import chipsalliance.rocketchip.config.Parameters
 import chisel3.util.BitPat.bitPatToUInt
 import xiangshan.backend.exu.ExuConfig
-import xiangshan.backend.fu.PMPEntry
+import xiangshan.backend.fu.{DasicsConst, DasicsEntry, DasicsJumpEntry, PMPEntry}
 import xiangshan.frontend.Ftq_Redirect_SRAMEntry
 import xiangshan.frontend.AllFoldedHistories
 import xiangshan.frontend.AllAheadFoldedHistoryOldestBits
@@ -134,6 +134,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
   val dasicsUntrusted = Bool()
   // Dasics Exception Reason
   val dasicsFaultReason = UInt(DasicsFaultWidth.W) 
+  val dasicsLevel = UInt(DasicsLevelBit.W)
   // info of branch fault by last branch
   val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
 }
@@ -235,7 +236,6 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val sqIdx = new SqPtr
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
-  val dasicsUntrusted = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
@@ -552,6 +552,33 @@ class DistributedCSRIO(implicit p: Parameters) extends XSBundle {
     val addr = Output(UInt(12.W))
     val data = Output(UInt(XLEN.W))
   })
+  val dasicsMemLevel = ValidIO(new DistributedDasicsLevel)
+  val dasicsMemLevelGlobal = ValidIO(Output(UInt(XLEN.W)))
+  val dasicsJmpLevel = ValidIO(new DistributedDasicsLevel)
+  val dasicsJmpLevelGlobal = ValidIO(Output(UInt(XLEN.W)))
+  val dasicsMemBounds = ValidIO(new DistributedDasicsMem())
+  val dasicsJmpBounds = ValidIO(new DistributedDasicsJmp())
+}
+
+class DistributedDasicsLevel(implicit p: Parameters) extends XSBundle with DasicsConst {
+  val addr: UInt = Output(UInt(log2Up(NumDasicsMemBounds).W))
+  val data: UInt = Output(UInt(DasicsLevelBit.W))
+}
+
+class DistributedDasicsMem(implicit p: Parameters) extends XSBundle{
+  val cfgAddr: UInt = Output(UInt(12.W))
+  val boundLoAddr: UInt = Output(UInt(12.W))
+  val entry: DasicsEntry = Output(new DasicsEntry())
+  val cfgData: UInt = Output(UInt(XLEN.W))
+  val cfgMask: UInt = Output(UInt(XLEN.W))
+}
+
+class DistributedDasicsJmp(implicit p: Parameters) extends XSBundle{
+  val cfgAddr: UInt = Output(UInt(12.W))
+  val boundLoAddr: UInt = Output(UInt(12.W))
+  val entry: DasicsJumpEntry = Output(new DasicsJumpEntry())
+  val cfgData: UInt = Output(UInt(XLEN.W))
+  val cfgMask: UInt = Output(UInt(XLEN.W))
 }
 
 class DistributedCSRUpdateReq(implicit p: Parameters) extends XSBundle {

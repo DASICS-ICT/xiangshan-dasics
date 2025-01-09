@@ -81,13 +81,20 @@ trait HasCSRConst {
   val DasicsLibBoundBase = 0x890
 
   val DasicsMainCall  = 0x8b0
-  val DasicsReturnPc  = 0x8b1
+  // val DasicsReturnPc  = 0x8b1
   val DasicsActiveZoneReturnPc = 0x8b2
   val DasicsFReason   = 0x8b3
-  
+  val DasicsReturnPcBase  = 0x8b4
+
   val DasicsJmpCfgBase = 0x8c8
   val DasicsJmpBoundBase = 0x8c0
   
+  val DasicsMemLevel = 0x8cc
+  val DasicsJmpLevel = 0x8cd
+
+  val DasicsScratchCfg = 0x8d0
+  val DasicsScratchBase = 0x8d2
+
   val Utimer        = 0x045
   // User-Level MPK Register
   val Upkru         = 0x800

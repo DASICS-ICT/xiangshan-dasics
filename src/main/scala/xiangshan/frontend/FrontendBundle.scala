@@ -21,7 +21,7 @@ import chisel3.util._
 import chisel3.experimental.chiselName
 import xiangshan._
 import xiangshan.frontend.icache._
-import xiangshan.backend.fu.{DasicsFaultReason, DasicsRespDataBundle}
+import xiangshan.backend.fu.{DasicsFaultReason, DasicsRespDataBundle, DasicsConst}
 import utils._
 import scala.math._
 import scala.{Tuple2 => &}
@@ -113,7 +113,7 @@ class mmioCommitRead(implicit p: Parameters) extends XSBundle {
   val mmioLastCommit = Input(Bool())
 }
 
-class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
+class FetchToIBuffer(implicit p: Parameters) extends XSBundle with DasicsConst{
   val instrs    = Vec(PredictWidth, UInt(32.W))
   val valid     = UInt(PredictWidth.W)
   val enqEnable = UInt(PredictWidth.W)
@@ -127,6 +127,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Vec(PredictWidth, Bool())
   val triggered    = Vec(PredictWidth, new TriggerCf)
   val dasicsUntrusted = Vec(PredictWidth, Bool())
+  val dasicsLevel  = Vec(PredictWidth, UInt(DasicsLevelBit.W))
   val dasicsBrResp = new DasicsRespDataBundle  // last branch to this instr block is illegal
   val lastBranch: UInt = UInt(VAddrBits.W)
 }

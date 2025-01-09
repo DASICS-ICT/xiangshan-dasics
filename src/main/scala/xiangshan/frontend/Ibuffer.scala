@@ -22,7 +22,7 @@ import chisel3.util._
 import xiangshan._
 import utils._
 import xiangshan.ExceptionNO._
-import xiangshan.backend.fu.DasicsFaultReason
+import xiangshan.backend.fu.{DasicsFaultReason, DasicsConst}
 import xiangshan.backend.fu.DasicsRespDataBundle
 import xiangshan.backend.fu.util.HasCSRConst
 class IbufPtr(implicit p: Parameters) extends CircularQueuePtr[IbufPtr](
@@ -37,7 +37,7 @@ class IBufferIO(implicit p: Parameters) extends XSBundle {
   val full = Output(Bool())
 }
 
-class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
+class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst with DasicsConst{
   val inst = UInt(32.W)
   val pc = UInt(VAddrBits.W)
   val foldpc = UInt(MemPredPCWidth.W)
@@ -51,6 +51,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
   val dasicsBrResp = new DasicsRespDataBundle
+  val dasicsLevel = UInt(DasicsLevelBit.W)
   val lastBranch: UInt = UInt(VAddrBits.W)
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
@@ -68,6 +69,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     dasicsUntrusted := fetch.dasicsUntrusted(i)
     dasicsBrResp.dasics_fault := DasicsFaultReason.noDasicsFault
     dasicsBrResp.mode := fetch.dasicsBrResp.mode
+    dasicsLevel := fetch.dasicsLevel(i)
     lastBranch := DontCare
     if (i == 0) { // only the first instr is a branch target
       dasicsBrResp.dasics_fault := fetch.dasicsBrResp.dasics_fault
@@ -99,6 +101,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
     cf.dasicsFaultReason := dasicsBrResp.dasics_fault
+    cf.dasicsLevel := dasicsLevel
     cf.lastBranch.valid := dasicsBrResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
     cf.lastBranch.bits := lastBranch
     cf

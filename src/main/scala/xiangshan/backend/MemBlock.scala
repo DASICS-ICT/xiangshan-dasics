@@ -261,8 +261,8 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
 
   if(HasDasics){
     // dasics memory access check
-    val dasics = Module(new MemDasics())
-    dasics.io.distribute_csr <> csrCtrl.distribute_csr
+    val dasics_backend = Module(new DasicsBackend())
+    dasics_backend.io.distribute_csr <> csrCtrl.distribute_csr
   
     val dasics_checkers = VecInit(Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt)(
       Module(new DasicsMemChecker()).io
@@ -270,8 +270,8 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
 
     for( (dchecker,index) <- dasics_checkers.zipWithIndex){
       dchecker.mode := tlbcsr_dup.last.priv.dmode
-      dchecker.resource := dasics.io.entries
-      dchecker.mainCfg  := dasics.io.mainCfg
+      dchecker.resource := dasics_backend.io.entries
+      dchecker.mainCfg  := dasics_backend.io.mainCfg
       dchecker.req := memDasicsReq(index)
       memDasicsResp(index) := dchecker.resp
     }
