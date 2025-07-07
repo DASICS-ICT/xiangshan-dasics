@@ -45,6 +45,7 @@ import xiangshan.frontend.AllAheadFoldedHistoryOldestBits
 import xiangshan.backend.fu.DasicsFaultReason
 import xiangshan.backend.fu.DasicsConst
 import xiangshan.backend.fu.util.HasCSRConst
+import xiangshan.backend.fu.ZicfilpRespDataBundle
 
 class ValidUndirectioned[T <: Data](gen: T) extends Bundle {
   val valid = Bool()
@@ -136,6 +137,8 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
   val dasicsFaultReason = UInt(DasicsFaultWidth.W) 
   // info of branch fault by last branch
   val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
+  // zicfilp info
+  val zicfilpDataInfo = new ZicfilpRespDataBundle // need check label for lpad
 }
 
 

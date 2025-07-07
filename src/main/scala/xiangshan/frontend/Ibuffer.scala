@@ -24,6 +24,7 @@ import utils._
 import xiangshan.ExceptionNO._
 import xiangshan.backend.fu.DasicsFaultReason
 import xiangshan.backend.fu.DasicsRespDataBundle
+import xiangshan.backend.fu.ZicfilpRespDataBundle
 import xiangshan.backend.fu.util.HasCSRConst
 class IbufPtr(implicit p: Parameters) extends CircularQueuePtr[IbufPtr](
   p => p(XSCoreParamsKey).IBufSize
@@ -47,10 +48,12 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val ftqOffset = UInt(log2Ceil(PredictWidth).W)
   val ipf = Bool()
   val acf = Bool()
+  val scf = Bool() // Software Check Fault
   val crossPageIPFFix = Bool()
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
   val dasicsBrResp = new DasicsRespDataBundle
+  val zicfilpResp  = new ZicfilpRespDataBundle // for zicfilp
   val lastBranch: UInt = UInt(VAddrBits.W)
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
@@ -63,6 +66,14 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     ftqOffset := fetch.ftqOffset(i).bits
     ipf := fetch.ipf(i)
     acf := fetch.acf(i)
+    if (HasZicfilp) {
+      scf := fetch.elpInfo.hasException(i)
+      zicfilpResp.needCheckLabel := fetch.elpInfo.needCheckLabel(i)
+      zicfilpResp.shouldRaiseElp := fetch.elpInfo.shouldRaiseElp(i) // should raise arch_elp
+    } else {
+      scf := DontCare 
+      zicfilpResp := DontCare
+    }
     crossPageIPFFix := fetch.crossPageIPFFix(i)
     triggered := fetch.triggered(i)
     dasicsUntrusted := fetch.dasicsUntrusted(i)
@@ -83,6 +94,13 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     cf.foldpc := foldpc
     cf.exceptionVec := 0.U.asTypeOf(ExceptionVec())
     cf.exceptionVec(instrPageFault) := ipf
+    if (HasZicfilp) {
+      cf.exceptionVec(softwareCheckFault) := scf
+      cf.zicfilpDataInfo := zicfilpResp
+    } else {
+      cf.exceptionVec(softwareCheckFault) := false.B // if not HasZicfilp, this field is not used
+      cf.zicfilpDataInfo := DontCare // if not HasZicfilp, this field is not used
+    }
     cf.exceptionVec(instrAccessFault) := acf
     cf.exceptionVec(dasicsUCheckFault) := dasicsBrResp.dasics_fault === DasicsFaultReason.JumpDasicsFault && dasicsBrResp.mode === ModeU
     cf.exceptionVec(dasicsSCheckFault) := dasicsBrResp.dasics_fault === DasicsFaultReason.JumpDasicsFault && dasicsBrResp.mode === ModeS
