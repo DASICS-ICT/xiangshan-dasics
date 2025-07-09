@@ -647,6 +647,14 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   // read dest location
   cs.ldest := ctrl_flow.instr(RD_MSB, RD_LSB)
 
+  if (HasZicfilp){
+    val isLpadForLabelCheck = ctrl_flow.zicfilpDataInfo.needCheckLabel
+    when (isLpadForLabelCheck) {
+      cs.srcType(2) := SrcType.reg // for x7 label
+      cs.lsrc(2) := 7.U // x7 is used for label check
+    }
+  }
+
   // set RD=ra (0x1) for DasicsCall.J
   val isDasicsCallJ = cs.fuType === FuType.jmp && cs.fuOpType === JumpOpType.dasicscall_j
   when (isDasicsCallJ) {

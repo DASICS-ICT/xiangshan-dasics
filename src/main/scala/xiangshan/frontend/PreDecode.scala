@@ -29,6 +29,50 @@ import xiangshan.backend.fu.util.SdtrigExt
 trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst{
   def isRVC(inst: UInt) = (inst(1,0) =/= 3.U)
   def isLink(reg:UInt) = reg === 1.U || reg === 5.U
+  def isGuard(reg:UInt) = reg === 7.U
+  def islpad(instr: UInt) = {
+    instr === PreDecodeInst.LPAD
+  }
+  def lpadLabel(instr: UInt) = {
+    val rvc = isRVC(instr)
+    val label = Mux(rvc, 0.U, instr(31, 12))
+    label
+  }
+  /**
+ * Determine whether the given instruction should trigger an update to the ELP (Expected LPad) state.
+ *
+ * According to the Zicfilp/ELP policy, if an indirect jump instruction (either JALR or C.JALR)
+ * targets a register that is not a link (x1/x5) or guard (x7) register, we treat it as a potential
+ * uncontrolled control-flow transfer and set elp = 1. The following instruction must then be an LPAD.
+ *
+ * Special Note:
+ * - RVC compressed instructions C.JALR and C.JR share very similar encodings
+ *   (same opcode and funct3); the only difference is in the `rd` field:
+ *     - C.JALR: rd ≠ x0 — should trigger ELP
+ *     - C.JR:   rd == x0 — should NOT trigger ELP
+ *
+ * This function ensures correctness by:
+ *   1. Matching JALR and C.JALR via `isJalr(instr)`
+ *   2. Then filtering out instructions that write to link or guard registers
+ *
+ * Therefore, even if C.JR is loosely matched as C.JALR, it will not cause a false ELP trigger
+ * because its `rd` is x0 and will be excluded.
+ */
+  def isJalr(instr: UInt): Bool = {
+    val rvc = isRVC(instr)
+    val opcode = instr(1,0)
+    val funct3 = instr(15,13)
+    val rd = Mux(rvc, instr(11,7), instr(11,7))
+    val is32Jalr = !rvc && instr === PreDecodeInst.JALR
+    val is16Jalr = rvc && funct3 === "b000".U && rd =/= 0.U
+    is32Jalr || is16Jalr
+  }
+
+  def isJalrForELP(instr:UInt) = {
+    val isjalr = isJalr(instr)
+    val rd = Mux(isRVC(instr), instr(12), instr(11,7))
+    isjalr && !isLink(rd) && !isGuard(rd)
+  }
   def brInfo(instr: UInt) = {
     val brType::Nil = ListLookup(instr, List(BrType.notCFI), PreDecodeInst.brTable)
     val rd = Mux(isRVC(instr), instr(12), instr(11,7))
@@ -136,6 +180,19 @@ class PreDecode(implicit p: Parameters) extends XSModule with HasPdConst{
     io.out.pd(i).isCall        := isCall
     io.out.pd(i).isRet         := isRet
 
+<<<<<<< HEAD
+=======
+    // for Zicfilp
+    if (HasZicfilp) {
+      io.out.pd(i).cfiInfo.isJalrForELP := isJalrForELP(inst)
+      io.out.pd(i).cfiInfo.isLpad := islpad(inst)
+      io.out.pd(i).cfiInfo.pcAligned := pcAligned(currentPC)
+      io.out.pd(i).cfiInfo.label := lpadLabel(inst)
+    } else {
+      io.out.pd(i).cfiInfo := DontCare
+    }
+
+>>>>>>> 83eb80692 ([Feat]: support Zicfilp software label check via auipc/jump pipeline)
     //io.out.expInstr(i)         := expander.io.out.bits
     io.out.instr(i)              :=inst
     io.out.jumpOffset(i)       := Mux(io.out.pd(i).isBr, brOffset, jalOffset)

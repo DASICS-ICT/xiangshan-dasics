@@ -19,8 +19,9 @@ class ZicfilpPreDecodeInfo extends Bundle{
     // lpad
     val isLpad    = Bool()
     val pcAligned = Bool()
-    val labelZero = Bool() // label is zero if the upper 20 bits are all zero
-
+    val label     = UInt(20.W) // label for lpad
+    
+    def labelZero = label === 0.U // label is zero if the upper 20 bits are all zero
     def isValidLpad    = isLpad && pcAligned
     def needCheckLabel = isValidLpad && !labelZero
 }
@@ -113,4 +114,12 @@ class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
 class ZicfilpRespDataBundle(implicit p: Parameters) extends XSBundle{
     val shouldRaiseElp = Bool() // should raise arch_elp
     val needCheckLabel = Bool()
+    val label          = UInt(20.W) // label for lpad
+}
+
+class ZicfilpLabelCheckIO(implicit p: Parameters) extends XSBundle {
+    val needCheckLabel = Input(Bool())
+    val label          = Input(UInt(20.W))
+    val x7Label        = Input(UInt(20.W))
+    val labelMatch     = Output(Bool())
 }

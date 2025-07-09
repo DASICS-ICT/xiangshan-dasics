@@ -38,6 +38,7 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
     val immMin = Input(UInt(ImmUnion.maxLen.W))
     val func = Input(FuOpType())
     val isRVC = Input(Bool())
+    val zicfilpLabel = new ZicfilpLabelCheckIO
     val result, target = Output(UInt(XLEN.W))
     val isAuipc = Output(Bool())
   })
@@ -56,6 +57,14 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
 
   val snpc = Mux(isRVC, pc + 2.U, pc + 4.U)
   val target = src1 + offset // NOTE: src1 is (pc/rf(rs1)), src2 is (offset)
+
+  if (HasZicfilp){
+    io.zicfilpLabel.labelMatch := Mux(io.zicfilpLabel.needCheckLabel,
+      io.zicfilpLabel.label === io.zicfilpLabel.x7Label,
+      true.B) // if not need check label, always match
+  }else {
+    io.zicfilpLabel := DontCare // if not HasZicfilp, just ignore the label check
+  }
 
   // RISC-V spec for JALR:
   // The target address is obtained by adding the sign-extended 12-bit I-immediate to the register rs1,
@@ -98,9 +107,21 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   redirectOut.cfiUpdate.target := jumpDataModule.io.target
   redirectOut.cfiUpdate.isMisPred := jumpDataModule.io.target(VAddrBits - 1, 0) =/= jalr_target || !uop.cf.pred_taken
 
+  val patchedUop = WireDefault(uop)
+  if (HasZicfilp) {
+    jumpDataModule.io.zicfilpLabel.needCheckLabel := io.in.bits.uop.cf.zicfilpDataInfo.needCheckLabel
+    jumpDataModule.io.zicfilpLabel.label := io.in.bits.uop.cf.zicfilpDataInfo.label
+    jumpDataModule.io.zicfilpLabel.x7Label := io.in.bits.src(2)(31,12)  // x7
+    when(!jumpDataModule.io.zicfilpLabel.labelMatch){
+      patchedUop.cf.exceptionVec(softwareCheckFault) := true.B // if label not match, raise software check fault
+    }
+  } else {
+    jumpDataModule.io.zicfilpLabel := DontCare // if not HasZicfilp, just ignore the label check
+  }
+
   io.in.ready := io.out.ready
   io.out.valid := valid
-  io.out.bits.uop <> io.in.bits.uop
+  io.out.bits.uop <> patchedUop
   io.out.bits.data := jumpDataModule.io.result
 
 

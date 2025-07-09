@@ -138,7 +138,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
   // info of branch fault by last branch
   val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
   // zicfilp info
-  val zicfilpDataInfo = new ZicfilpRespDataBundle // need check label for lpad
+  val zicfilpDataInfo = new ZicfilpRespDataBundle 
 }
 
 
