@@ -41,7 +41,7 @@ class StatusEntry(params: RSParams)(implicit p: Parameters) extends XSBundle {
   val credit = UInt(4.W)
   val srcState = Vec(params.numSrc, Bool())
   val midState = Bool()
-  val ipwState = Bool() //[dasics] implicite wait state, 0 for not need wait, 1 for need wait
+  val ipwState = if (params.isStore || params.isLoad) Some(Bool()) else None //[dasics] implicite wait state, 0 for not need wait, 1 for need wait
   // data
   val psrc = Vec(params.numSrc, UInt(params.dataIdBits.W))
   val srcType = Vec(params.numSrc, SrcType())
@@ -59,13 +59,13 @@ class StatusEntry(params: RSParams)(implicit p: Parameters) extends XSBundle {
     val blockedCond = if (params.checkWaitBit) !blocked else true.B
     val checkedSrcState = if (params.numSrc > 2) srcState.take(2) else srcState
     val midStateReady = if (params.hasMidState) srcState.last && midState else false.B
-    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState else true.B
+    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState.get else true.B
     (VecInit(checkedSrcState).asUInt.andR && scheduledCond || midStateReady) && blockedCond && ipwStateReady
   }
 
   def allSrcReady: Bool = {
     val midStateReady = if (params.hasMidState) srcState.last && midState else false.B
-    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState else true.B
+    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState.get else true.B
     (srcState.asUInt.andR && ipwStateReady) || midStateReady
   }
 
@@ -102,6 +102,7 @@ class StatusArray(params: RSParams)(implicit p: Parameters) extends XSModule
     })))
     val stIssuePtr = if (params.checkWaitBit) Input(new SqPtr()) else null
     val memWaitUpdateReq = if (params.checkWaitBit) Flipped(new MemWaitUpdateReq) else null
+    val impWaitWakeup = if (params.isLoad || params.isStore) Some(Input(Bool())) else None
   })
 
   val statusArrayValid = RegInit(VecInit(Seq.fill(params.numEntries)(false.B)))
@@ -242,7 +243,9 @@ class StatusArray(params: RSParams)(implicit p: Parameters) extends XSModule
     // When the entry is not granted to issue, set isFirstIssue to false.B
     statusNext.isFirstIssue := Mux(hasIssued, false.B, updateValid(i) || status.isFirstIssue)
 
-    statusNext.ipwState := Mux(updateValid(i), updateVal(i).ipwState, status.ipwState)
+    if (params.isStore || params.isLoad) {
+      statusNext.ipwState.get := Mux(io.impWaitWakeup.get, false.B, Mux(updateValid(i), updateVal(i).ipwState.get, status.ipwState.get))
+    }
 
     XSDebug(statusValid, p"entry[$i]: $status\n")
   }

@@ -962,7 +962,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val hasInflightIWSrc = InflightIWSrcCnt.asUInt > 0.U
   val hasInflightIWSrcReg = RegNext(hasInflightIWSrc)
   io.hasInflightIWSrc := hasInflightIWSrc
-  io.impWaitWakeup := !hasInflightIWSrcReg && hasInflightIWSrcReg
+  io.impWaitWakeup := !hasInflightIWSrc && hasInflightIWSrcReg
 
   /**
     * debug info

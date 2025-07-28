@@ -185,6 +185,9 @@ class ReservationStationWrapper(implicit p: Parameters) extends LazyModule with 
     if (io.fmaMid.isDefined) {
       io.fmaMid.get <> rs.flatMap(_.io.fmaMid.get)
     }
+    if (io.impWaitWakeup.isDefined) {
+      rs.foreach(_.io.impWaitWakeup.get := io.impWaitWakeup.get)
+    }
 
     val perfEvents = rs.flatMap(_.getPerfEvents)
     generatePerfEvent()
@@ -429,6 +432,9 @@ class ReservationStation(params: RSParams)(implicit p: Parameters) extends XSMod
 
   // update status and payload array
   statusArray.io.redirect := io.redirect
+  if (io.impWaitWakeup.isDefined) {
+    statusArray.io.impWaitWakeup.get := RegNext(io.impWaitWakeup.get)
+  }
   for (((statusUpdate, uop), i) <- statusArray.io.update.zip(s1_dispatchUops_dup.head).zipWithIndex) {
     s1_delayedSrc(i).foreach(_ := false.B)
     if (params.delayedFpRf) {
@@ -455,7 +461,9 @@ class ReservationStation(params: RSParams)(implicit p: Parameters) extends XSMod
     statusUpdate.data.waitForStoreData := false.B
     statusUpdate.data.strictWait := uop.bits.cf.loadWaitStrict
     statusUpdate.data.isFirstIssue := true.B
-    statusUpdate.data.ipwState := uop.bits.ipwNeedWait
+    if (params.isStore || params.isLoad) {
+      statusUpdate.data.ipwState.get := uop.bits.ipwNeedWait
+    }
   }
   // We need to block issue until the corresponding store issues.
   if (io.checkwait.isDefined) {
