@@ -783,12 +783,20 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
+  // Dasics Config CSRs, need flush pipe
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
     (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) ||
     (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
     (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
     addr === DasicsLibCfgBase.U
+
+  val addrInDasicsCfg =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
+    (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
+    (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U)
+    //|| (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
+    // (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) || 
+    // addr === DasicsLibCfgBase.U
 
 
   val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
@@ -932,8 +940,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
   val frm_change = w_fcsr_change_rm || w_frm_change_rm
   val isXRet = valid && func === CSROpType.jmp && !isEcall && !isEbreak
-  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate
-  //|| (addrInDasics && wen)
+  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate || (addrInDasicsCfg && wen)
 
   private val illegalRetTarget = WireInit(false.B)
 
