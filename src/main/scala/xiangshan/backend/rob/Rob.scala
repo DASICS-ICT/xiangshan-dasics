@@ -288,6 +288,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val robDeqPtr = Output(new RobPtr)
     val csr = new RobCSRIO
     val robFull = Output(Bool())
+    val hasInflightIWSrc = Output(Bool())
+    val impWaitWakeup = Output(Bool())
     val cpu_halt = Output(Bool())
     val wfi_enable = Input(Bool())
   })
@@ -956,6 +958,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   instrCntReg := instrCnt
   io.csr.perfinfo.retiredInstr := retireCounter
   io.robFull := !allowEnqueue
+
+  val hasInflightIWSrc = InflightIWSrcCnt.asUInt > 0.U
+  val hasInflightIWSrcReg = RegNext(hasInflightIWSrc)
+  io.hasInflightIWSrc := hasInflightIWSrc
+  io.impWaitWakeup := !hasInflightIWSrcReg && hasInflightIWSrcReg
 
   /**
     * debug info

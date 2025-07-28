@@ -122,6 +122,7 @@ class Rename(implicit p: Parameters) extends XSModule
     uops(i).implicitWaitSrc := false.B
     io.out(i).bits.implicitWaitSrc := uops(i).implicitWaitSrc
     uops(i).implicitWaitSink := false.B
+    uops(i).ipwNeedWait := false.B
     io.out(i).bits.implicitWaitSink := uops(i).implicitWaitSink
 
     // update cf according to ssit result
@@ -203,8 +204,9 @@ class Rename(implicit p: Parameters) extends XSModule
     }
 
     //Translator for load/store
-    val isTargetLoad  = uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.ldu
-    val isTargetStore = uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.stu
+    val isNexusDebug = true
+    val isTargetLoad  = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.ldu
+    val isTargetStore = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
 
     when(isTargetLoad || isTargetStore){
       io.out(i).bits.implicitWaitSink := true.B

@@ -45,6 +45,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val recv = Output(Vec(RenameWidth, Bool()))
     // enq Rob
     val enqRob = Flipped(new RobEnqIO)
+    val hasInflightIWSrc = Input(Bool())
     // enq Lsq
     val allocPregs = Vec(RenameWidth, Output(new ResetPregStateReq))
     // to dispatch queue
@@ -139,6 +140,9 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
       XSDebug(updatedUop(i).cf.trigger.getFrontendCanFire, s"Debug Mode: inst ${i} has frontend trigger exception\n")
       XSDebug(updatedUop(i).ctrl.singleStep, s"Debug Mode: inst ${i} has single step exception\n")
     }
+
+    //[dasics] target wait signal update
+    updatedUop(i).ipwNeedWait := io.hasInflightIWSrc && updatedUop(i).implicitWaitSink
   }
 
   // store set perf count

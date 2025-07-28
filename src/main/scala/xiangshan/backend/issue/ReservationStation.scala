@@ -215,6 +215,7 @@ class ReservationStationIO(params: RSParams)(implicit p: Parameters) extends XSB
   val fastUopsIn = Vec(params.numFastWakeup, Flipped(ValidIO(new MicroOp)))
   val fastDatas = Vec(params.numFastWakeup, Input(UInt(params.dataBits.W)))
   val slowPorts = Vec(params.numWakeup, Flipped(ValidIO(new ExuOutput)))
+  val impWaitWakeup = if (params.isLoad || params.isStore) Some(Input(Bool())) else None
   // extra
   val fastWakeup = if (params.fixedLatency >= 0) Some(Vec(params.numDeq, ValidIO(new MicroOp))) else None
   val jump = if (params.isJump) Some(new Bundle {
@@ -337,6 +338,10 @@ class ReservationStation(params: RSParams)(implicit p: Parameters) extends XSMod
     wakeup.bits := dest
   }
 
+  if (io.impWaitWakeup.isDefined) {
+    dontTouch(io.impWaitWakeup.get)
+  }
+
   // select the issue instructions
   // Option 1: normal selection (do not care about the age)
   select.io.request := statusArray.io.canIssue
@@ -450,6 +455,7 @@ class ReservationStation(params: RSParams)(implicit p: Parameters) extends XSMod
     statusUpdate.data.waitForStoreData := false.B
     statusUpdate.data.strictWait := uop.bits.cf.loadWaitStrict
     statusUpdate.data.isFirstIssue := true.B
+    statusUpdate.data.ipwState := uop.bits.ipwNeedWait
   }
   // We need to block issue until the corresponding store issues.
   if (io.checkwait.isDefined) {

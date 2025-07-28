@@ -302,6 +302,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   ctrlBlock.io.memoryViolation <> memBlock.io.memoryViolation
   exuBlocks.head.io.scheExtra.enqLsq.get <> memBlock.io.enqLsq
   exuBlocks.foreach(b => {
+    b.io.scheExtra.impWaitWakeup := ctrlBlock.io.robio.impWaitWakeup
     b.io.scheExtra.lcommit := ctrlBlock.io.robio.lsq.lcommit
     b.io.scheExtra.scommit := memBlock.io.sqDeq
     b.io.scheExtra.lqCancelCnt := memBlock.io.lqCancelCnt

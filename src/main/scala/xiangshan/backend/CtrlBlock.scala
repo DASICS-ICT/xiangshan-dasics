@@ -213,6 +213,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
       val exception = ValidIO(new ExceptionInfo)
       // to mem block
       val lsq = new RobLsqIO
+      // to load / store rs
+      val impWaitWakeup = Output(Bool())
     }
     val csrCtrl = Input(new CustomCSRCtrlIO)
     val perfInfo = Output(new Bundle{
@@ -441,6 +443,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   dispatch.io.toLsDq <> lsDq.io.enq
   dispatch.io.allocPregs <> io.allocPregs
   dispatch.io.singleStep := RegNext(io.csrCtrl.singlestep)
+  dispatch.io.hasInflightIWSrc := rob.io.hasInflightIWSrc
+  dontTouch(dispatch.io.hasInflightIWSrc)
+  io.robio.impWaitWakeup := RegNext(rob.io.impWaitWakeup)
 
   intDq.io.redirect <> redirectForExu
   fpDq.io.redirect <> redirectForExu
