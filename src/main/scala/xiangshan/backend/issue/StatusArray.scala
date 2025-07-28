@@ -23,6 +23,7 @@ import xiangshan._
 import utils._
 import xiangshan.backend.rob.RobPtr
 import xiangshan.mem.{SqPtr, MemWaitUpdateReq}
+import os.truncate
 
 class StatusArrayUpdateIO(params: RSParams)(implicit p: Parameters) extends Bundle {
   val enable = Input(Bool())
@@ -40,6 +41,7 @@ class StatusEntry(params: RSParams)(implicit p: Parameters) extends XSBundle {
   val credit = UInt(4.W)
   val srcState = Vec(params.numSrc, Bool())
   val midState = Bool()
+  val ipwState = Bool() //[dasics] implicite wait state, 0 for not need wait, 1 for need wait
   // data
   val psrc = Vec(params.numSrc, UInt(params.dataIdBits.W))
   val srcType = Vec(params.numSrc, SrcType())
@@ -57,12 +59,14 @@ class StatusEntry(params: RSParams)(implicit p: Parameters) extends XSBundle {
     val blockedCond = if (params.checkWaitBit) !blocked else true.B
     val checkedSrcState = if (params.numSrc > 2) srcState.take(2) else srcState
     val midStateReady = if (params.hasMidState) srcState.last && midState else false.B
-    (VecInit(checkedSrcState).asUInt.andR && scheduledCond || midStateReady) && blockedCond
+    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState else true.B
+    (VecInit(checkedSrcState).asUInt.andR && scheduledCond || midStateReady) && blockedCond && ipwStateReady
   }
 
   def allSrcReady: Bool = {
     val midStateReady = if (params.hasMidState) srcState.last && midState else false.B
-    srcState.asUInt.andR || midStateReady
+    val ipwStateReady = if (params.isStore || params.isLoad) !ipwState else true.B
+    (srcState.asUInt.andR && ipwStateReady) || midStateReady
   }
 
   override def toPrintable: Printable = {
@@ -237,6 +241,8 @@ class StatusArray(params: RSParams)(implicit p: Parameters) extends XSModule
     // isFirstIssue: indicate whether the entry has been issued before
     // When the entry is not granted to issue, set isFirstIssue to false.B
     statusNext.isFirstIssue := Mux(hasIssued, false.B, updateValid(i) || status.isFirstIssue)
+
+    statusNext.ipwState := Mux(updateValid(i), updateVal(i).ipwState, status.ipwState)
 
     XSDebug(statusValid, p"entry[$i]: $status\n")
   }

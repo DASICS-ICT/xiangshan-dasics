@@ -238,6 +238,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val dasicsUntrusted = Bool()
   val implicitWaitSrc = Bool()
   val implicitWaitSink = Bool()
+  val ipwNeedWait = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
