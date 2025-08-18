@@ -142,12 +142,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   class MstatusStruct extends Bundle {
     val sd = Output(UInt(1.W))
 
-    val pad1 = if (XLEN == 64) Output(UInt(25.W)) else null
+    val pad2 = if (XLEN == 64) Output(UInt(21.W)) else null // 62-42
+    val mpelp = if (XLEN == 64) Output(UInt(1.W)) else null // bit 41
+    val pad1 = if (XLEN == 64) Output(UInt(3.W)) else null // bit 40-38
+
     val mbe  = if (XLEN == 64) Output(UInt(1.W)) else null
     val sbe  = if (XLEN == 64) Output(UInt(1.W)) else null
     val sxl  = if (XLEN == 64) Output(UInt(2.W))  else null
     val uxl  = if (XLEN == 64) Output(UInt(2.W))  else null
-    val pad0 = if (XLEN == 64) Output(UInt(9.W))  else Output(UInt(8.W))
+    val pad0 = if (XLEN == 64) Output(UInt(8.W))  else Output(UInt(7.W))
+
+    val spelp = Output(UInt(1.W))
 
     val tsr = Output(UInt(1.W))
     val tw = Output(UInt(1.W))
@@ -305,17 +310,19 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   }
 
   val mstatusWMask = (~ZeroExt((
-    GenMask(XLEN - 2, 36) | // WPRI
+    GenMask(XLEN - 2, 42) | // WPRI
+    GenMask(40, 36)       | // WPRI (bit 41 for MPELP)
     GenMask(35, 32)       | // SXL and UXL cannot be changed
-    GenMask(31, 23)       | // WPRI
+    GenMask(31, 24)       | // WPRI (bit 23 for SPELP)
     GenMask(16, 15)       | // XS is read-only
     GenMask(10, 9)        | // WPRI
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
   ), 64)).asUInt
   val mstatusMask = (~ZeroExt((
-    GenMask(XLEN - 2, 36) | // WPRI
-    GenMask(31, 23)       | // WPRI
+    GenMask(XLEN - 2, 42) | // WPRI
+    GenMask(40, 36)       | // WPRI
+    GenMask(31, 24)       | // WPRI
     GenMask(10, 9)        | // WPRI
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
