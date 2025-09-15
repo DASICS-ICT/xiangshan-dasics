@@ -807,7 +807,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val doCommit = io.commits.commitValid.reduce(_||_) && io.commits.isCommit
   val commitIWSrcNum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_iwsrc(i)))
 
-  when(io.enq.canAccept && doCommit){
+  when(state === s_walk && walkFinished){
+    //InflightIWSrcCnt := 0.U
+  }.elsewhen(io.enq.canAccept && doCommit){
     InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum - commitIWSrcNum
   }.elsewhen(io.enq.canAccept){
     InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum
@@ -962,7 +964,17 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val hasInflightIWSrc = InflightIWSrcCnt.asUInt > 0.U
   val hasInflightIWSrcReg = RegNext(hasInflightIWSrc)
   io.hasInflightIWSrc := hasInflightIWSrc
-  io.impWaitWakeup := !hasInflightIWSrc && hasInflightIWSrcReg
+  val firstWakeup = !hasInflightIWSrc && hasInflightIWSrcReg
+
+  val wakeupCounter = RegInit(0.U(4.W))
+  when (wakeupCounter === 0.U || firstWakeup) {
+    wakeupCounter := 10.U
+  }.elsewhen(!hasInflightIWSrc) {
+    wakeupCounter := wakeupCounter - 1.U
+  }
+  val timeWakeup = wakeupCounter === 0.U
+
+  io.impWaitWakeup := !firstWakeup || timeWakeup
 
   /**
     * debug info

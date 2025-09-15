@@ -113,6 +113,7 @@ class Rename(implicit p: Parameters) extends XSModule
 
   val intSpecWen = Wire(Vec(RenameWidth, Bool()))
   val fpSpecWen = Wire(Vec(RenameWidth, Bool()))
+  val isDasicsMetaSet = Wire(Vec(RenameWidth, Bool()))
 
   // uop calculation
   for (i <- 0 until RenameWidth) {
@@ -191,27 +192,54 @@ class Rename(implicit p: Parameters) extends XSModule
 
     //Translator for dasics write bound csr
     val addr = uops(i).ctrl.imm(11, 0)
-    val addrInDasics = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) ||
+    val addrInDasicsBound = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) ||
       (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
       addr === DasicsLibCfgBase.U
-    val isCSRWrite = uops(i).ctrl.fuOpType === CSROpType.wrt || uops(i).ctrl.fuOpType === CSROpType.wrti
-    val isDasicsWrite = !uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasics
+    val isCSRWrite = (uops(i).ctrl.fuOpType === CSROpType.wrt  || uops(i).ctrl.fuOpType === CSROpType.wrti) && uops(i).ctrl.ldest === 0.U
+    isDasicsMetaSet(i) := !uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsBound
 
-    when(isDasicsWrite){
+
+    when(isDasicsMetaSet(i)){
       io.out(i).bits.ctrl.blockBackward := false.B
       io.out(i).bits.ctrl.noSpecExec    := false.B
       io.out(i).bits.implicitWaitSrc    := true.B
     }
 
     //Translator for load/store
-    val isNexusDebug = true
+    val isNexusDebug = false
     val isTargetLoad  = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.ldu
     val isTargetStore = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
 
     when(isTargetLoad || isTargetStore){
       io.out(i).bits.implicitWaitSink := true.B
     }
+
+    // Dasics Meta Set Batch prologue instructions
+    val isCSRRead = uops(i).ctrl.fuOpType === CSROpType.set && uops(i).ctrl.lsrc(0) === 0.U
+    val isMetaSetPrologue = !uops(i).cf.dasicsUntrusted && isCSRRead && addr === DasicsLibCfgBase.U
+
+    when(isMetaSetPrologue){
+      io.out(i).bits.ctrl.noSpecExec := true.B
+      io.out(i).bits.ctrl.blockBackward := false.B
+    }
+
   }
+
+  // Dasics Meta Set Batch prologue instructions
+  // val firstMetaSetState = RegInit(false.B)
+  // val hasDasicsMetaSet  = isDasicsMetaSet.asUInt.orR
+  // val firstMetaSetIdx = PriorityEncoder(isDasicsMetaSet)
+
+  // val flush = io.redirect.valid && !io.redirect.bits.flushItself()
+
+  // when(flush){
+  //   firstMetaSetState := false.B
+  // }.elsewhen(!firstMetaSetState && hasDasicsMetaSet){
+  //   io.out(firstMetaSetIdx).bits.ctrl.noSpecExec := true.B
+  //   firstMetaSetState := true.B
+  // }.elsewhen(firstMetaSetState && !hasDasicsMetaSet){
+  //   firstMetaSetState := false.B
+  // }
 
   /**
     * How to set psrc:
