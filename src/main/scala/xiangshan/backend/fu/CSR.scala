@@ -1071,7 +1071,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   mipWire.s.m := csrio.externalInterrupt.msip
   mipWire.e.m := csrio.externalInterrupt.meip
   mipWire.e.s := csrio.externalInterrupt.seip
-  mipWire.e.u := csrio.externalInterrupt.ueip | (utimer === 1.U)
+  mipWire.e.u := csrio.externalInterrupt.ueip
+  mipWire.t.u := (utimer === 1.U)
 
   // interrupts
   val intrNO = IntPriority.foldRight(0.U)((i: Int, sum: UInt) => Mux(intrVec(i), i.U, sum))
