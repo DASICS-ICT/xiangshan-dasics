@@ -136,7 +136,7 @@ abstract class XSCoreBase()(implicit p: config.Parameters) extends LazyModule
   // interrupt sinks
   val clint_int_sink = IntSinkNode(IntSinkPortSimple(1, 2))
   val debug_int_sink = IntSinkNode(IntSinkPortSimple(1, 1))
-  val plic_int_sink = IntSinkNode(IntSinkPortSimple(2, 1))
+  val plic_int_sink = IntSinkNode(IntSinkPortSimple(3, 1))
   // outer facing nodes
   val frontend = LazyModule(new Frontend())
   val ptw = LazyModule(new PTWWrapper())
@@ -395,8 +395,8 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   csrioIn.externalInterrupt.msip := outer.clint_int_sink.in.head._1(0)
   csrioIn.externalInterrupt.mtip := outer.clint_int_sink.in.head._1(1)
   csrioIn.externalInterrupt.meip := outer.plic_int_sink.in.head._1(0)
-  csrioIn.externalInterrupt.seip := outer.plic_int_sink.in.last._1(0)
-  csrioIn.externalInterrupt.ueip := 0.U
+  csrioIn.externalInterrupt.seip := outer.plic_int_sink.in(1)._1(0)
+  csrioIn.externalInterrupt.ueip := outer.plic_int_sink.in.last._1(0)
   csrioIn.externalInterrupt.debug := outer.debug_int_sink.in.head._1(0)
 
   csrioIn.distributedUpdate(0).w.valid := memBlock.io.csrUpdate.w.valid
