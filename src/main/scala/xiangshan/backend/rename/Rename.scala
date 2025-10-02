@@ -196,7 +196,7 @@ class Rename(implicit p: Parameters) extends XSModule
       (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
       addr === DasicsLibCfgBase.U
     val isCSRWrite = (uops(i).ctrl.fuOpType === CSROpType.wrt  || uops(i).ctrl.fuOpType === CSROpType.wrti) && uops(i).ctrl.ldest === 0.U
-    isDasicsMetaSet(i) := !uops(i).cf.dasicsUntrusted && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsBound
+    isDasicsMetaSet(i) := !uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsBound
 
 
     when(isDasicsMetaSet(i)){
@@ -207,8 +207,8 @@ class Rename(implicit p: Parameters) extends XSModule
 
     //Translator for load/store
     val isNexusDebug = false
-    val isTargetLoad  = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.ldu
-    val isTargetStore = (uops(i).cf.dasicsUntrusted || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
+    val isTargetLoad  = ((uops(i).cf.dasicsUntrusted &&  uops(i).cf.mode === ModeU) || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.ldu
+    val isTargetStore = ((uops(i).cf.dasicsUntrusted &&  uops(i).cf.mode === ModeU) || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
 
     when(isTargetLoad || isTargetStore){
       io.out(i).bits.implicitWaitSink := true.B
@@ -216,7 +216,7 @@ class Rename(implicit p: Parameters) extends XSModule
 
     // Dasics Meta Set Batch prologue instructions
     val isCSRRead = uops(i).ctrl.fuOpType === CSROpType.set && uops(i).ctrl.lsrc(0) === 0.U
-    val isMetaSetPrologue = !uops(i).cf.dasicsUntrusted && isCSRRead && addr === DasicsLibCfgBase.U
+    val isMetaSetPrologue = !uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU && isCSRRead && addr === DasicsLibCfgBase.U
 
     when(isMetaSetPrologue){
       io.out(i).bits.ctrl.noSpecExec := true.B

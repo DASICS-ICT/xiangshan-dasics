@@ -132,6 +132,8 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
   val ftqOffset = UInt(log2Up(PredictWidth).W)
   // needs to be checked by Dasics
   val dasicsUntrusted = Bool()
+
+  val mode = UInt(2.W)
   // Dasics Exception Reason
   val dasicsFaultReason = UInt(DasicsFaultWidth.W) 
   // info of branch fault by last branch

@@ -127,6 +127,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val crossPageIPFFix = Vec(PredictWidth, Bool())
   val triggered    = Vec(PredictWidth, new TriggerCf)
   val dasicsUntrusted = Vec(PredictWidth, Bool())
+  val mode = Vec(PredictWidth, UInt(2.W))
   val dasicsBrResp = new DasicsRespDataBundle  // last branch to this instr block is illegal
   val lastBranch: UInt = UInt(VAddrBits.W)
 }

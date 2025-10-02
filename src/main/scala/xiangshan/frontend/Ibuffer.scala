@@ -50,6 +50,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val crossPageIPFFix = Bool()
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
+  val mode = UInt(2.W)
   val dasicsBrResp = new DasicsRespDataBundle
   val lastBranch: UInt = UInt(VAddrBits.W)
 
@@ -66,6 +67,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     crossPageIPFFix := fetch.crossPageIPFFix(i)
     triggered := fetch.triggered(i)
     dasicsUntrusted := fetch.dasicsUntrusted(i)
+    mode := fetch.mode(i)
     dasicsBrResp.dasics_fault := DasicsFaultReason.noDasicsFault
     dasicsBrResp.mode := fetch.dasicsBrResp.mode
     lastBranch := DontCare
@@ -98,6 +100,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
+    cf.mode := mode
     cf.dasicsFaultReason := dasicsBrResp.dasics_fault
     cf.lastBranch.valid := dasicsBrResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
     cf.lastBranch.bits := lastBranch
