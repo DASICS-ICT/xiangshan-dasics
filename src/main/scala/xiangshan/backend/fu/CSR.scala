@@ -88,6 +88,7 @@ class CSRFileIO(implicit p: Parameters) extends XSBundle {
   val fpu = Flipped(new FpuCsrIO)
   // from rob
   val exception = Flipped(ValidIO(new ExceptionInfo))
+  val zicfilpData = Flipped(ValidIO(new ZicfilpROBToCSRIO))
   // to ROB
   val isXRet = Output(Bool())
   val trapTarget = Output(UInt(VAddrBits.W))
@@ -832,6 +833,20 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.customCtrl.distribute_csr.w.bits.data := wdata
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
 
+  //zicfilp
+  val arch_elp_value = WireInit(false.B)
+  val arch_elp_restore = Wire(Valid(Bool()))
+  arch_elp_restore.valid := false.B
+  arch_elp_restore.bits := false.B
+
+  val need_sync_elp_to_frontend = WireInit(false.B)
+  if (HasZicfilp){
+    val arch_elp = Module(new ArchElp())
+    arch_elp.io.robToCsrZicfilpData := csrio.zicfilpData
+    arch_elp.io.xretRestore := arch_elp_restore
+    arch_elp_value := arch_elp.io.arch_elp_value
+  }
+
   // Fix Mip/Sip/Uip write
   val fixMapping = Map(
     MaskedRegMap(Mip, mipReg.asUInt, mipFixMask),
@@ -981,6 +996,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
       mstatus := mstatusNew.asUInt
+
+      if (HasZicfilp){
+        arch_elp_restore.valid := true.B
+        arch_elp_restore.bits := mstatusOld.mpelp.asBool
+      }
     }.elsewhen(isSret && !illegalSret && !illegalSModeSret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -990,6 +1010,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.spp := ModeU
       mstatus := mstatusNew.asUInt
       when (mstatusOld.spp =/= ModeM) { mstatusNew.mprv := 0.U }
+
+      if (HasZicfilp){
+        arch_elp_restore.valid := true.B
+        arch_elp_restore.bits := mstatusOld.spelp.asBool
+      }
     }.elsewhen(isUret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -1113,6 +1138,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val hasInstrAccessFault   = hasException && exceptionVecFromRob(instrAccessFault)
   val hasLoadAccessFault    = hasException && exceptionVecFromRob(loadAccessFault)
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
+  val hasSoftwareCheckFault = hasException && exceptionVecFromRob(softwareCheckFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
 
   val hasDasicsUCheckFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsUCheckFault)
@@ -1201,9 +1227,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     hasDasicsUStoreFault,
     hasDasicsSJumpFault,
     hasDasicsUJumpFault,
+    hasSoftwareCheckFault,
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
-    val tval = Mux(
+    val tval = Mux(RegNext(RegNext(hasSoftwareCheckFault)),2.U,// for Zicfilp
+    Mux(
       RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
       // for dasics fetch faults, epc is the last branch, tval is this instr
       RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
@@ -1216,7 +1244,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
         ))),
         memExceptionAddr
       )
-    )
+    ))
     when (RegNext(privilegeMode === ModeM)) {
       mtval := tval
     }.elsewhen (RegNext(privilegeMode === ModeS)) {
@@ -1314,6 +1342,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.spp := privilegeMode
       mstatusNew.pie.s := mstatusOld.ie.s
       mstatusNew.ie.s := false.B
+      if(HasZicfilp){
+        mstatusNew.spelp := arch_elp_value 
+      }
       privilegeMode := ModeS
       when (clearTval) { stval := 0.U }
     }.otherwise {
@@ -1326,6 +1357,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.mpp := privilegeMode
       mstatusNew.pie.m := mstatusOld.ie.m
       mstatusNew.ie.m := false.B
+      if (HasZicfilp) {
+        mstatusNew.mpelp := arch_elp_value
+      }
       privilegeMode := ModeM
       when (clearTval) { mtval := 0.U }
     }
@@ -1338,6 +1372,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // save fault reason in DasicsFReason Reg from ROB
   when (hasDasicsUCheckFault || hasDasicsSCheckFault){
     dasicsFReasonReg := dasicsFaultReasonFromRob
+  }
+
+  if(HasZicfilp){
+    need_sync_elp_to_frontend := hasExceptionIntr || (valid && (isMret || isSret))
+    csrio.customCtrl.arch_elp_sync.valid := need_sync_elp_to_frontend
+    csrio.customCtrl.arch_elp_sync.bits := arch_elp_value
+  }else{
+    csrio.customCtrl.arch_elp_sync := DontCare
   }
 
   // Distributed CSR update req

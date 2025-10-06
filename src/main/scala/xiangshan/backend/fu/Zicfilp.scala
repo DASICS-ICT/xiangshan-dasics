@@ -40,13 +40,17 @@ class InstInfo(implicit p: Parameters) extends XSBundle {
 class SpecELPResp(implicit p: Parameters) extends XSBundle {
     val hasException     = Vec(PredictWidth, Bool())
     val shouldRaiseElp   = Vec(PredictWidth, Bool()) // should raise arch_elp
+    val shouldClearElp   = Vec(PredictWidth, Bool()) // should clear elp state (for lpad)
     val needCheckLabel   = Vec(PredictWidth, Bool())
 }
 
 class SpecELPIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
+    val flush         = Input(Bool())
     val csrInfo       = new CSRInfo
     val instInfo      = Flipped(ValidIO(new InstInfo))
-    val resp          = Output(new SpecELPResp)
+    val resp          = ValidIO(new SpecELPResp)
+
+    val arch_elp_sync = Input(Valid(Bool())) // sync elp state from Backend
 }
 class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
     val io = IO(new SpecELPIO)
@@ -78,41 +82,40 @@ class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
     val zicfilp_enable = zicfilp_menable || zicfilp_senable || zicfilp_uenable
 
     // elp handler
-    val pdInfoValid = io.instInfo.valid
-    val inst_valid = io.instInfo.bits.inst_valid
-    val hasValidInstr = inst_valid.reduce(_ || _)
-    // jalr raising elp
-    val shouldRaiseElpVec =(inst_valid zip io.instInfo.bits.predecodeInfo).map{
-        case (valid, predecode) => 
-            valid && predecode.isJalrForELP
-    }
-    val hasElpRaisingJalr = shouldRaiseElpVec.reduce(_ || _)
-    val shouldRaiseElp  = zicfilp_enable && pdInfoValid && !spec_elp && hasElpRaisingJalr
-
-    // lpad raising elp
-    val firstValidInstrIdx = PriorityEncoder(inst_valid)
-    val firstValidInstrInfo = io.instInfo.bits.predecodeInfo(firstValidInstrIdx) 
-    val firstValidInstrIsValidLpad = hasValidInstr && firstValidInstrInfo.isValidLpad
-    //By default, a currently valid lpad instruction is assumed to match its label, and a further label-matching check will be performed again at the execution stage.
-    val shouldClearElp = pdInfoValid && hasValidInstr && spec_elp 
-
-    // Elp state maintenance
-    when(shouldClearElp) {
-        spec_elp := false.B
-    }.elsewhen(shouldRaiseElp) {
-        spec_elp := true.B
+    val instValidVec = io.instInfo.bits.inst_valid
+    val instPdVec    = io.instInfo.bits.predecodeInfo
+    val shouldRaiseElpVec = WireInit(VecInit((0 until PredictWidth).map(i => false.B)))
+    val shouldClearElpVec = WireInit(VecInit((0 until PredictWidth).map(i => false.B)))
+    val exceptionVec = WireInit(VecInit((0 until PredictWidth).map(i => false.B)))
+    val needCheckLabelVec = WireInit(VecInit((0 until PredictWidth).map(i => false.B)))
+    val elpInitState = spec_elp
+    val finalElpState = (0 until PredictWidth).foldLeft(elpInitState) { case (elpState, i) =>
+        val nextElpState = Mux(!instValidVec(i), elpState, 
+                           Mux(!elpState, Mux(instPdVec(i).isJalrForELP, true.B, false.B), 
+                           Mux(instPdVec(i).isValidLpad, false.B, true.B)))
+        shouldRaiseElpVec(i) := instValidVec(i) && !elpState && instPdVec(i).isJalrForELP
+        shouldClearElpVec(i) := instValidVec(i) && elpState && instPdVec(i).isValidLpad
+        exceptionVec(i) := instValidVec(i) && elpState && !instPdVec(i).isValidLpad 
+        needCheckLabelVec(i) := instValidVec(i) && elpState && instPdVec(i).needCheckLabel 
+        nextElpState
     }
 
-    io.resp.shouldRaiseElp := shouldRaiseElpVec
-    io.resp.hasException   := VecInit.tabulate(PredictWidth) { i =>
-        pdInfoValid && hasValidInstr && spec_elp && i.U === firstValidInstrIdx && !firstValidInstrIsValidLpad
+    when (io.arch_elp_sync.valid){
+        spec_elp := io.arch_elp_sync.bits
     }
-    io.resp.needCheckLabel := VecInit.tabulate(PredictWidth) { i =>
-        shouldClearElp && i.U === firstValidInstrIdx && firstValidInstrInfo.needCheckLabel
-    } 
+    .elsewhen (io.instInfo.valid && zicfilp_enable && !io.flush){
+        spec_elp := finalElpState
+    }
+
+    io.resp.valid := io.instInfo.valid && zicfilp_enable
+    io.resp.bits.hasException := exceptionVec
+    io.resp.bits.shouldRaiseElp := shouldRaiseElpVec
+    io.resp.bits.shouldClearElp := shouldClearElpVec
+    io.resp.bits.needCheckLabel := needCheckLabelVec
 }
 class ZicfilpRespDataBundle(implicit p: Parameters) extends XSBundle{
     val shouldRaiseElp = Bool() // should raise arch_elp
+    val shouldClearElp = Bool() // should clear arch_elp
     val needCheckLabel = Bool()
     val label          = UInt(20.W) // label for lpad
 }
@@ -122,4 +125,37 @@ class ZicfilpLabelCheckIO(implicit p: Parameters) extends XSBundle {
     val label          = Input(UInt(20.W))
     val x7Label        = Input(UInt(20.W))
     val labelMatch     = Output(Bool())
+}
+
+class ZicfilpROBToCSRIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
+    val commitShouldRaiseElp = Vec(CommitWidth, Bool())
+    val commitShouldClearElp = Vec(CommitWidth, Bool())
+}
+
+class ArchElpIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
+    val robToCsrZicfilpData    = Flipped(ValidIO(new ZicfilpROBToCSRIO))
+    val xretRestore            = Input(Valid(Bool())) // restore elp state when xret
+    val arch_elp_value         = Output(Bool())
+}
+
+class ArchElp(implicit p: Parameters) extends XSModule with HasCSRConst {
+    val io = IO(new ArchElpIO)
+
+    private val arch_elp = RegInit(false.B)
+
+    val updateValid = io.robToCsrZicfilpData.valid
+    val raiseVec = io.robToCsrZicfilpData.bits.commitShouldRaiseElp
+    val clearVec = io.robToCsrZicfilpData.bits.commitShouldClearElp
+
+    val finalElpState = (0 until CommitWidth).foldLeft(arch_elp) { case (currentElpState, i) =>
+        Mux(raiseVec(i), true.B,
+        Mux(clearVec(i), false.B, currentElpState))
+    }
+
+    when (io.xretRestore.valid){
+        arch_elp := io.xretRestore.bits
+    }.elsewhen (updateValid){
+        arch_elp := finalElpState
+    }
+    io.arch_elp_value := arch_elp
 }

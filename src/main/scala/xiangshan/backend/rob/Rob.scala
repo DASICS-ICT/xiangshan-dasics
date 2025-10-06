@@ -26,6 +26,7 @@ import xiangshan._
 import xiangshan.backend.exu.ExuConfig
 import xiangshan.frontend.FtqPtr
 import xiangshan.backend.fu.DasicsConst
+import xiangshan.backend.fu.ZicfilpROBToCSRIO
 
 class RobPtr(implicit p: Parameters) extends CircularQueuePtr[RobPtr](
   p => p(XSCoreParamsKey).RobSize
@@ -56,6 +57,7 @@ class RobCSRIO(implicit p: Parameters) extends XSBundle {
 
   val fflags     = Output(Valid(UInt(5.W)))
   val dirty_fs   = Output(Bool())
+  val zicfilpData  = ValidIO(new ZicfilpROBToCSRIO)
   val perfinfo   = new Bundle {
     val retiredInstr = Output(UInt(3.W))
   }
@@ -635,6 +637,24 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.csr.fflags := RegNext(fflags)
   io.csr.dirty_fs := RegNext(dirty_fs)
 
+  if (HasZicfilp) {
+    val raiseElpVec = Wire(Vec(CommitWidth, Bool()))
+    val clearElpVec = Wire(Vec(CommitWidth, Bool()))
+
+    for (i <- 0 until CommitWidth) {
+      raiseElpVec(i) := io.commits.isCommit && io.commits.commitValid(i) && io.commits.info(i).shouldRaiseElp
+      clearElpVec(i) := io.commits.isCommit && io.commits.commitValid(i) && io.commits.info(i).shouldClearElp
+    }
+
+    io.csr.zicfilpData.valid := RegNext(io.commits.isCommit && io.commits.commitValid.asUInt.orR)
+    for (i <- 0 until CommitWidth) {
+      io.csr.zicfilpData.bits.commitShouldRaiseElp(i) := RegNext(raiseElpVec(i))
+      io.csr.zicfilpData.bits.commitShouldClearElp(i) := RegNext(clearElpVec(i))
+    }
+  } else {
+    io.csr.zicfilpData := DontCare
+  }
+
   // commit load/store to lsq
   val ldCommitVec = VecInit((0 until CommitWidth).map(i => io.commits.commitValid(i) && io.commits.info(i).commitType === CommitType.LOAD))
   val stCommitVec = VecInit((0 until CommitWidth).map(i => io.commits.commitValid(i) && io.commits.info(i).commitType === CommitType.STORE))
@@ -851,6 +871,13 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     wdata.old_pdest := req.old_pdest
     wdata.ftqIdx := req.cf.ftqPtr
     wdata.ftqOffset := req.cf.ftqOffset
+    if (HasZicfilp) {
+      wdata.shouldRaiseElp := req.cf.zicfilpDataInfo.shouldRaiseElp
+      wdata.shouldClearElp := req.cf.zicfilpDataInfo.shouldClearElp
+    } else {
+      wdata.shouldRaiseElp := DontCare
+      wdata.shouldClearElp := DontCare
+    }
   }
   dispatchData.io.raddr := commitReadAddr_next
 

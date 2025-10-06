@@ -70,7 +70,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
       scf := fetch.elpInfo.hasException(i)
       zicfilpResp.needCheckLabel := fetch.elpInfo.needCheckLabel(i)
       zicfilpResp.shouldRaiseElp := fetch.elpInfo.shouldRaiseElp(i) // should raise arch_elp
-      zicfilpResp.label          := fetch.pd(i).cfiInfo.label // label for lpad
+      zicfilpResp.shouldClearElp := fetch.elpInfo.shouldClearElp(i) // should clear elp state (for lpad)
+      zicfilpResp.label          := fetch.pd(i).cfiInfo.label       // label for lpad
     } else {
       scf := DontCare 
       zicfilpResp := DontCare

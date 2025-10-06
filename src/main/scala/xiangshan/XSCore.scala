@@ -392,6 +392,12 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   csrioIn.wfi_event <> ctrlBlock.io.robio.toCSR.wfiEvent
   csrioIn.memExceptionVAddr <> memBlock.io.lsqio.exceptionAddr.vaddr
 
+  if(HasZicfilp){
+    csrioIn.zicfilpData <> ctrlBlock.io.robio.toCSR.zicfilpData
+  }else {
+    csrioIn.zicfilpData := DontCare
+  }
+
   csrioIn.externalInterrupt.msip := outer.clint_int_sink.in.head._1(0)
   csrioIn.externalInterrupt.mtip := outer.clint_int_sink.in.head._1(1)
   csrioIn.externalInterrupt.meip := outer.plic_int_sink.in.head._1(0)

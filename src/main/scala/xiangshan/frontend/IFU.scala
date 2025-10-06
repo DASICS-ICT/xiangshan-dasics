@@ -66,7 +66,15 @@ class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
   val resp = Flipped(new DasicsRespBundle)
 }
 
-class NewIFUIO(implicit p: Parameters) extends XSBundle {
+class IFUCfiInfoIO(implicit p: Parameters) extends XSBundle {
+  val distribut_csr = Input(new DistributedCSRIO)
+  val cpu_mode      = Input(UInt(2.W))
+  val arch_elp_sync = Input(Valid(Bool())) // sync elp state from Backend
+}
+
+class NewIFUIO(implicit p: Parameters) extends XSBundle
+  with HasXSParameter
+{
   val ftqInter        = new FtqInterface
   val icacheInter     = Flipped(new IFUICacheIO)
   val icacheStop      = Output(Bool())
@@ -78,6 +86,7 @@ class NewIFUIO(implicit p: Parameters) extends XSBundle {
   val iTLBInter       = new BlockTlbRequestIO
   val pmp             =   new ICachePMPBundle
   val dasics          = new IFUDasicsIO
+  val cfiInfo         = new IFUCfiInfoIO
   val mmioCommitRead  = new mmioCommitRead
 }
 
@@ -606,6 +615,19 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   f3_instr_valid := Mux(f3_lastHalf.valid,f3_hasHalfValid ,VecInit(f3_pd.map(inst => inst.valid)))
 
+  if (HasZicfilp) {
+    val spec_elp = Module(new SpecELP)
+    spec_elp.io.flush                 := f3_flush
+    spec_elp.io.csrInfo.distribut_csr := io.cfiInfo.distribut_csr
+    spec_elp.io.csrInfo.cpu_mode      := io.cfiInfo.cpu_mode
+    spec_elp.io.instInfo.valid        := f3_fire
+    spec_elp.io.instInfo.bits.inst_valid := f3_instr_valid
+    spec_elp.io.instInfo.bits.predecodeInfo := VecInit(f3_pd.map(_.cfiInfo))
+    spec_elp.io.arch_elp_sync         := io.cfiInfo.arch_elp_sync
+    io.toIbuffer.bits.elpInfo         := spec_elp.io.resp.bits
+  } else {
+    io.toIbuffer.bits.elpInfo := DontCare
+  }
   /*** frontend Trigger  ***/
   frontendTrigger.io.pds  := f3_pd
   frontendTrigger.io.pc   := f3_pc

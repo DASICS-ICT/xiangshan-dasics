@@ -650,8 +650,8 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   if (HasZicfilp){
     val isLpadForLabelCheck = ctrl_flow.zicfilpDataInfo.needCheckLabel
     when (isLpadForLabelCheck) {
-      cs.srcType(2) := SrcType.reg // for x7 label
-      cs.lsrc(2) := 7.U // x7 is used for label check
+      cs.srcType(1) := SrcType.reg // for x7 label
+      cs.lsrc(1) := 7.U // x7 is used for label check
     }
   }
 

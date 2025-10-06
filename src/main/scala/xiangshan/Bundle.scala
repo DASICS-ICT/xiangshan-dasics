@@ -376,6 +376,9 @@ class RobDispatchData(implicit p: Parameters) extends XSBundle {
   val old_pdest = UInt(PhyRegIdxWidth.W)
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
+
+  val shouldRaiseElp = Bool()
+  val shouldClearElp = Bool()
 }
 
 class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
@@ -392,6 +395,13 @@ class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
     old_pdest := data.old_pdest
     ftqIdx := data.ftqIdx
     ftqOffset := data.ftqOffset
+    if (HasZicfilp) {
+      shouldRaiseElp := data.shouldRaiseElp
+      shouldClearElp := data.shouldClearElp
+    } else {
+      shouldRaiseElp := DontCare
+      shouldClearElp := DontCare
+    }
   }
 }
 
@@ -547,6 +557,9 @@ class CustomCSRCtrlIO(implicit p: Parameters) extends XSBundle {
   val frontend_trigger = new FrontendTdataDistributeIO()
   val mem_trigger = new MemTdataDistributeIO()
   val dasics_enable  = Output(Bool())
+
+  //zicfilp elp sync
+  val arch_elp_sync = Output(Valid(Bool())) 
 }
 
 class DistributedCSRIO(implicit p: Parameters) extends XSBundle {

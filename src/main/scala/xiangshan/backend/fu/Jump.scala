@@ -59,9 +59,7 @@ class JumpDataModule(implicit p: Parameters) extends XSModule {
   val target = src1 + offset // NOTE: src1 is (pc/rf(rs1)), src2 is (offset)
 
   if (HasZicfilp){
-    io.zicfilpLabel.labelMatch := Mux(io.zicfilpLabel.needCheckLabel,
-      io.zicfilpLabel.label === io.zicfilpLabel.x7Label,
-      true.B) // if not need check label, always match
+    io.zicfilpLabel.labelMatch := Mux(io.zicfilpLabel.needCheckLabel, io.zicfilpLabel.label === io.zicfilpLabel.x7Label, true.B) // if not need check label, always match
   }else {
     io.zicfilpLabel := DontCare // if not HasZicfilp, just ignore the label check
   }
@@ -111,7 +109,7 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   if (HasZicfilp) {
     jumpDataModule.io.zicfilpLabel.needCheckLabel := io.in.bits.uop.cf.zicfilpDataInfo.needCheckLabel
     jumpDataModule.io.zicfilpLabel.label := io.in.bits.uop.cf.zicfilpDataInfo.label
-    jumpDataModule.io.zicfilpLabel.x7Label := io.in.bits.src(2)(31,12)  // x7
+    jumpDataModule.io.zicfilpLabel.x7Label := io.in.bits.src(1)(31,12)  // x7
     when(!jumpDataModule.io.zicfilpLabel.labelMatch){
       patchedUop.cf.exceptionVec(softwareCheckFault) := true.B // if label not match, raise software check fault
     }

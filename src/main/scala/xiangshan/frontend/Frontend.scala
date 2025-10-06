@@ -117,6 +117,14 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   ifu.io.dasics.resp := dasicsBrChecker.io.resp
   }
 
+  if (HasZicfilp) {
+    ifu.io.cfiInfo.distribut_csr := csrCtrl.distribute_csr
+    ifu.io.cfiInfo.cpu_mode      := tlbCsr.priv.imode
+    ifu.io.cfiInfo.arch_elp_sync := csrCtrl.arch_elp_sync
+  } else {
+    ifu.io.cfiInfo               := DontCare
+  }
+
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))
   // tlb_req_arb.io.in(0) <> ifu.io.iTLBInter.req
   // tlb_req_arb.io.in(1) <> icache.io.itlb(1).req
