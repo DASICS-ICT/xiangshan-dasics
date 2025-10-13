@@ -26,6 +26,10 @@ import xiangshan.frontend.icache._
 import utils._
 import xiangshan.backend.fu.{PMPReqBundle, PMPRespBundle, DasicsFaultReason}
 import xiangshan.backend.fu.{DasicsRespBundle, DasicsRespDataBundle}
+import xiangshan.backend.fu.{SpecELP}
+import xiangshan.backend.fu.util.HasCSRConst
+import freechips.rocketchip.util.SeqToAugmentedSeq
+import xiangshan.backend.fu.ZicfilpPreDecodeInfo
 
 trait HasInstrMMIOConst extends HasXSParameter with HasIFUConst{
   def mmioBusWidth = 64
@@ -614,20 +618,6 @@ class NewIFU(implicit p: Parameters) extends XSModule
   }
 
   f3_instr_valid := Mux(f3_lastHalf.valid,f3_hasHalfValid ,VecInit(f3_pd.map(inst => inst.valid)))
-
-  if (HasZicfilp) {
-    val spec_elp = Module(new SpecELP)
-    spec_elp.io.flush                 := f3_flush
-    spec_elp.io.csrInfo.distribut_csr := io.cfiInfo.distribut_csr
-    spec_elp.io.csrInfo.cpu_mode      := io.cfiInfo.cpu_mode
-    spec_elp.io.instInfo.valid        := f3_fire
-    spec_elp.io.instInfo.bits.inst_valid := f3_instr_valid
-    spec_elp.io.instInfo.bits.predecodeInfo := VecInit(f3_pd.map(_.cfiInfo))
-    spec_elp.io.arch_elp_sync         := io.cfiInfo.arch_elp_sync
-    io.toIbuffer.bits.elpInfo         := spec_elp.io.resp.bits
-  } else {
-    io.toIbuffer.bits.elpInfo := DontCare
-  }
   /*** frontend Trigger  ***/
   frontendTrigger.io.pds  := f3_pd
   frontendTrigger.io.pc   := f3_pc
@@ -684,6 +674,40 @@ class NewIFU(implicit p: Parameters) extends XSModule
   mmioFlushWb.bits.jalTarget  := DontCare
   mmioFlushWb.bits.instrRange := f3_mmio_range
 
+  // MMIO-specific predecode information for specELP
+  // MMIO packets only contain 1 instruction at position 0
+  if (HasZicfilp) {
+    val spec_elp = Module(new SpecELP)
+    spec_elp.io.flush                 := f3_flush
+    spec_elp.io.csrInfo.distribut_csr := io.cfiInfo.distribut_csr
+    spec_elp.io.csrInfo.cpu_mode      := io.cfiInfo.cpu_mode
+    spec_elp.io.instInfo.valid        := Mux(f3_req_is_mmio, true.B, f3_fire)
+
+    val inst = Cat(f3_mmio_data(1), f3_mmio_data(0))
+    val mmio_predecode_info = Wire(Vec(PredictWidth, new ZicfilpPreDecodeInfo))
+    val mmio_inst_valid    = Wire(Vec(PredictWidth, Bool()))
+
+     // 初始化所有位置
+    for (i <- 0 until PredictWidth) {
+      mmio_predecode_info(i).isJalrForELP := false.B
+      mmio_predecode_info(i).isLpad := false.B
+      mmio_predecode_info(i).pcAligned := false.B
+      mmio_predecode_info(i).label := 0.U
+      mmio_inst_valid(i) := false.B
+    }
+    mmio_inst_valid(0) := true.B
+    mmio_predecode_info(0).isJalrForELP := isJalrForELP(inst)
+    mmio_predecode_info(0).isLpad       := islpad(inst)
+    mmio_predecode_info(0).label        := lpadLabel(inst)
+    mmio_predecode_info(0).pcAligned    := pcAligned(f3_ftq_req.startAddr)
+    spec_elp.io.instInfo.bits.inst_valid := Mux(f3_req_is_mmio, mmio_inst_valid, f3_instr_valid)
+    spec_elp.io.instInfo.bits.predecodeInfo := Mux(f3_req_is_mmio, mmio_predecode_info, VecInit(f3_pd.map(_.cfiInfo)))
+    spec_elp.io.arch_elp_sync         := io.cfiInfo.arch_elp_sync
+    io.toIbuffer.bits.elpInfo         := spec_elp.io.resp.bits
+  } else {
+    io.toIbuffer.bits.elpInfo := DontCare
+  }
+
   /** external predecode for MMIO instruction */
   when(f3_req_is_mmio){
     val inst  = Cat(f3_mmio_data(1), f3_mmio_data(0))
@@ -707,6 +731,9 @@ class NewIFU(implicit p: Parameters) extends XSModule
     io.toIbuffer.bits.crossPageIPFFix(0) := mmio_resend_pf
 
     io.toIbuffer.bits.enqEnable   := f3_mmio_range.asUInt
+    if(HasZicfilp){
+      io.toIbuffer.bits.pd(0).cfiInfo.label := lpadLabel(inst)
+    }
 
     mmioFlushWb.bits.pd(0).valid   := true.B
     mmioFlushWb.bits.pd(0).isRVC   := currentIsRVC

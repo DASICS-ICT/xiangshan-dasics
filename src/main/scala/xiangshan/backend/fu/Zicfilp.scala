@@ -107,7 +107,8 @@ class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
         spec_elp := finalElpState
     }
 
-    io.resp.valid := io.instInfo.valid && zicfilp_enable
+    // Only send valid response when not flushing to ensure consistency
+    io.resp.valid := io.instInfo.valid && zicfilp_enable && !io.flush
     io.resp.bits.hasException := exceptionVec
     io.resp.bits.shouldRaiseElp := shouldRaiseElpVec
     io.resp.bits.shouldClearElp := shouldClearElpVec

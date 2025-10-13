@@ -27,6 +27,7 @@ import xiangshan.backend.decode.isa.predecode.PreDecodeInst
 import xiangshan.backend.fu.util.SdtrigExt
 
 trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst{
+  def pcAligned(pc: UInt) = pc(1,0) === 0.U // pc is aligned to 4 bytes
   def isRVC(inst: UInt) = (inst(1,0) =/= 3.U)
   def isLink(reg:UInt) = reg === 1.U || reg === 5.U
   def isGuard(reg:UInt) = reg === 7.U
