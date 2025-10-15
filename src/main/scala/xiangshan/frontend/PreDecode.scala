@@ -42,22 +42,23 @@ trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUCons
   /**
  * Determine whether the given instruction should trigger an update to the ELP (Expected LPad) state.
  *
- * According to the Zicfilp/ELP policy, if an indirect jump instruction (either JALR or C.JALR)
- * targets a register that is not a link (x1/x5) or guard (x7) register, we treat it as a potential
+ * According to the Zicfilp/ELP policy (spec Listing 6), if an indirect jump instruction (either JALR or C.JALR)
+ * uses a source register (rs1) that is not a link (x1/x5) or guard (x7) register, we treat it as a potential
  * uncontrolled control-flow transfer and set elp = 1. The following instruction must then be an LPAD.
+ *
+ * Important: The check is performed on rs1 (source register), NOT rd (destination register).
+ * This is per Zicfilp specification which states: set ELP when rs1 ∉ {x1, x5, x7}.
  *
  * Special Note:
  * - RVC compressed instructions C.JALR and C.JR share very similar encodings
  *   (same opcode and funct3); the only difference is in the `rd` field:
- *     - C.JALR: rd ≠ x0 — should trigger ELP
- *     - C.JR:   rd == x0 — should NOT trigger ELP
+ *     - C.JALR: rd ≠ x0 — may trigger ELP depending on rs1
+ *     - C.JR:   rd == x0 — may trigger ELP depending on rs1
  *
  * This function ensures correctness by:
  *   1. Matching JALR and C.JALR via `isJalr(instr)`
- *   2. Then filtering out instructions that write to link or guard registers
- *
- * Therefore, even if C.JR is loosely matched as C.JALR, it will not cause a false ELP trigger
- * because its `rd` is x0 and will be excluded.
+ *   2. Then checking if rs1 is a link (x1/x5) or guard (x7) register
+ *   3. Setting ELP only when rs1 ∉ {x1, x5, x7}
  */
   def isJalr(instr: UInt): Bool = {
     val rvc = isRVC(instr)
@@ -71,8 +72,10 @@ trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUCons
 
   def isJalrForELP(instr:UInt) = {
     val isjalr = isJalr(instr)
-    val rd = Mux(isRVC(instr), instr(12), instr(11,7))
-    isjalr && !isLink(rd) && !isGuard(rd)
+    // Fix: Check rs1 (source register) instead of rd (destination register)
+    // According to Zicfilp spec: ELP should be set when rs1 ∉ {x1, x5, x7}
+    val rs1 = Mux(isRVC(instr), instr(11, 7), instr(19, 15))
+    isjalr && !isLink(rs1) && !isGuard(rs1)
   }
   def brInfo(instr: UInt) = {
     val brType::Nil = ListLookup(instr, List(BrType.notCFI), PreDecodeInst.brTable)

@@ -559,7 +559,17 @@ class CustomCSRCtrlIO(implicit p: Parameters) extends XSBundle {
   val dasics_enable  = Output(Bool())
 
   //zicfilp elp sync
-  val arch_elp_sync = Output(Valid(Bool())) 
+  // Sync types:
+  // valid=false: no sync
+  // valid=true: sync arch_elp to spec_elp based on isException and isXRet
+  //   isException=true: exception/interrupt - clear both to 0
+  //   isXRet=true: xRET - restore both from xPELP (value provided)
+  //   both=false: normal pipeline flush - sync arch_elp (value) to spec_elp
+  val arch_elp_sync = Output(Valid(new Bundle {
+    val isException = Bool()  // true: exception, clear both ELP to 0
+    val isXRet = Bool()       // true: xRET, restore from xPELP
+    val value = Bool()        // ELP value (for normal flush and xRET)
+  })) 
 }
 
 class DistributedCSRIO(implicit p: Parameters) extends XSBundle {

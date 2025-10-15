@@ -73,7 +73,11 @@ class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
 class IFUCfiInfoIO(implicit p: Parameters) extends XSBundle {
   val distribut_csr = Input(new DistributedCSRIO)
   val cpu_mode      = Input(UInt(2.W))
-  val arch_elp_sync = Input(Valid(Bool())) // sync elp state from Backend
+  val arch_elp_sync = Input(Valid(new Bundle {
+    val isException = Bool()  // true: exception, clear both to 0
+    val isXRet = Bool()       // true: xRET, restore from xPELP
+    val value = Bool()        // ELP value (for normal flush and xRET)
+  }))
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle

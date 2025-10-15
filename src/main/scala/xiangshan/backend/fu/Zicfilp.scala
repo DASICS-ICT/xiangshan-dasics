@@ -50,7 +50,11 @@ class SpecELPIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
     val instInfo      = Flipped(ValidIO(new InstInfo))
     val resp          = ValidIO(new SpecELPResp)
 
-    val arch_elp_sync = Input(Valid(Bool())) // sync elp state from Backend
+    val arch_elp_sync = Input(Valid(new Bundle {
+        val isException = Bool()  // true: exception, clear both to 0
+        val isXRet = Bool()       // true: xRET, restore from xPELP
+        val value = Bool()        // ELP value (for normal flush and xRET)
+    }))
 }
 class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
     val io = IO(new SpecELPIO)
@@ -101,7 +105,16 @@ class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
     }
 
     when (io.arch_elp_sync.valid){
-        spec_elp := io.arch_elp_sync.bits
+        when (io.arch_elp_sync.bits.isException) {
+            // Exception/interrupt: clear spec_elp to 0
+            spec_elp := false.B
+        }.elsewhen (io.arch_elp_sync.bits.isXRet) {
+            // xRET: restore from xPELP (value already includes LPE check)
+            spec_elp := io.arch_elp_sync.bits.value
+        }.otherwise {
+            // Normal flush: sync arch_elp to spec_elp
+            spec_elp := io.arch_elp_sync.bits.value
+        }
     }
     .elsewhen (io.instInfo.valid && zicfilp_enable && !io.flush){
         spec_elp := finalElpState
@@ -136,6 +149,7 @@ class ZicfilpROBToCSRIO(implicit p: Parameters) extends XSBundle with HasCSRCons
 class ArchElpIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
     val robToCsrZicfilpData    = Flipped(ValidIO(new ZicfilpROBToCSRIO))
     val xretRestore            = Input(Valid(Bool())) // restore elp state when xret
+    val trapClearElp           = Input(Bool()) // clear elp state on trap entry
     val arch_elp_value         = Output(Bool())
 }
 
@@ -153,7 +167,11 @@ class ArchElp(implicit p: Parameters) extends XSModule with HasCSRConst {
         Mux(clearVec(i), false.B, currentElpState))
     }
 
-    when (io.xretRestore.valid){
+    when (io.trapClearElp) {
+        // Clear ELP on trap entry (exception/interrupt)
+        // Per Zicfilp spec: ELP is cleared when entering a trap handler
+        arch_elp := false.B
+    }.elsewhen (io.xretRestore.valid){
         arch_elp := io.xretRestore.bits
     }.elsewhen (updateValid){
         arch_elp := finalElpState
