@@ -838,12 +838,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val arch_elp_restore = Wire(Valid(Bool()))
   arch_elp_restore.valid := false.B
   arch_elp_restore.bits := false.B
+  val arch_elp_trap_clear = WireInit(false.B)
 
   val need_sync_elp_to_frontend = WireInit(false.B)
   if (HasZicfilp){
     val arch_elp = Module(new ArchElp())
     arch_elp.io.robToCsrZicfilpData := csrio.zicfilpData
     arch_elp.io.xretRestore := arch_elp_restore
+    arch_elp.io.trapClearElp := arch_elp_trap_clear
     arch_elp_value := arch_elp.io.arch_elp_value
   }
 
@@ -995,12 +997,23 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.pie.m := true.B
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
-      mstatus := mstatusNew.asUInt
 
       if (HasZicfilp){
+        // Restore ELP from MPELP only if LPE is enabled for the target privilege mode
+        // Per Zicfilp spec: ELP restoration depends on target mode's LPE setting
+        val targetMode = mstatusOld.mpp
+        val lpeEnabled = MuxLookup(targetMode, false.B, Seq(
+          ModeM -> mseccfg(10).asBool,  // MLPE (bit 10 of mseccfg)
+          ModeS -> menvcfg(2).asBool,   // LPE (bit 2 of menvcfg)
+          ModeU -> Mux(HasNExtension.B, senvcfg(2).asBool, false.B)  // LPE (bit 2 of senvcfg)
+        ))
         arch_elp_restore.valid := true.B
-        arch_elp_restore.bits := mstatusOld.mpelp.asBool
+        arch_elp_restore.bits := lpeEnabled && mstatusOld.mpelp.asBool
+        // Clear MPELP after restoration per Zicfilp spec (must be done before mstatus update)
+        mstatusNew.mpelp := 0.U
       }
+
+      mstatus := mstatusNew.asUInt
     }.elsewhen(isSret && !illegalSret && !illegalSModeSret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -1008,13 +1021,23 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       privilegeMode := Cat(0.U(1.W), mstatusOld.spp)
       mstatusNew.pie.s := true.B
       mstatusNew.spp := ModeU
-      mstatus := mstatusNew.asUInt
       when (mstatusOld.spp =/= ModeM) { mstatusNew.mprv := 0.U }
 
       if (HasZicfilp){
+        // Restore ELP from SPELP only if LPE is enabled for the target privilege mode
+        // Per Zicfilp spec: ELP restoration depends on target mode's LPE setting
+        val targetMode = Cat(0.U(1.W), mstatusOld.spp)  // Convert 1-bit spp to 2-bit mode
+        val lpeEnabled = MuxLookup(targetMode, false.B, Seq(
+          ModeS -> menvcfg(2).asBool,   // LPE (bit 2 of menvcfg)
+          ModeU -> Mux(HasNExtension.B, senvcfg(2).asBool, false.B)  // LPE (bit 2 of senvcfg)
+        ))
         arch_elp_restore.valid := true.B
-        arch_elp_restore.bits := mstatusOld.spelp.asBool
+        arch_elp_restore.bits := lpeEnabled && mstatusOld.spelp.asBool
+        // Clear SPELP after restoration per Zicfilp spec (must be done before mstatus update)
+        mstatusNew.spelp := 0.U
       }
+
+      mstatus := mstatusNew.asUInt
     }.elsewhen(isUret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -1299,6 +1322,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     val lastBranchInfo = WireInit(csrio.exception.bits.uop.cf.lastBranch)
     val hasDasicsBrFault = (hasDasicsUJumpFault || hasDasicsSJumpFault) && lastBranchInfo.valid
     val hasDasicsBrIntr = hasDasicsJumpIntr && lastBranchInfo.valid
+
+    // Clear ELP on trap entry per Zicfilp spec
+    if (HasZicfilp) {
+      arch_elp_trap_clear := true.B
+    }
     when (hasDebugTrap && !debugMode) {
       import DcsrStruct._
       debugModeNew := true.B
@@ -1375,9 +1403,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   }
 
   if(HasZicfilp){
-    need_sync_elp_to_frontend := hasExceptionIntr || (valid && (isMret || isSret))
+    // Sync scenarios:
+    // 1. Exception/interrupt: clear both frontend and backend ELP to 0
+    // 2. xRET: restore both from xPELP (with LPE check already applied)
+    // 3. Normal flush: sync arch_elp to spec_elp
+    need_sync_elp_to_frontend := hasExceptionIntr || (valid && (isMret || isSret)) || flushPipe
     csrio.customCtrl.arch_elp_sync.valid := need_sync_elp_to_frontend
-    csrio.customCtrl.arch_elp_sync.bits := arch_elp_value
+    csrio.customCtrl.arch_elp_sync.bits.isException := hasExceptionIntr
+    csrio.customCtrl.arch_elp_sync.bits.isXRet := valid && (isMret || isSret)
+    // When xRET: use the restored value from xPELP; otherwise use current arch_elp_value
+    csrio.customCtrl.arch_elp_sync.bits.value := Mux(valid && (isMret || isSret), arch_elp_restore.bits, arch_elp_value)
   }else{
     csrio.customCtrl.arch_elp_sync := DontCare
   }
@@ -1494,6 +1529,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     difftest.io.upkru := upkru
     difftest.io.spkrs := spkrs
     difftest.io.spkctl := spkctl
+    // Zicfilp CSRs - only connect if enabled
+    if (HasZicfilp) {
+      difftest.io.menvcfg := menvcfg
+      difftest.io.senvcfg := senvcfg
+      difftest.io.mseccfg := mseccfg
+    } else {
+      difftest.io.menvcfg := 0.U
+      difftest.io.senvcfg := 0.U
+      difftest.io.mseccfg := 0.U
+    }
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {
