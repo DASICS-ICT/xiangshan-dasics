@@ -330,6 +330,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   ), 64)).asUInt
 
   val medeleg = RegInit(UInt(XLEN.W), 0.U)
+  val medelegMask = if (HasZicfilp) "h304b3ff".U(XLEN.W) else "h300b3ff".U(XLEN.W) // Bit 18 for SoftwareCheckFault (Zicfilp)
   val mideleg = RegInit(UInt(XLEN.W), 0.U)
   val mscratch = RegInit(UInt(XLEN.W), 0.U)
 
@@ -675,7 +676,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "h300b3ff".U(XLEN.W)),
+    MaskedRegMap(Medeleg, medeleg, medelegMask),
     MaskedRegMap(Mideleg, mideleg, "h333".U(XLEN.W)),
     MaskedRegMap(Mie, mie, "hbbb".U(XLEN.W)),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
@@ -1005,7 +1006,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
         val lpeEnabled = MuxLookup(targetMode, false.B, Seq(
           ModeM -> mseccfg(10).asBool,  // MLPE (bit 10 of mseccfg)
           ModeS -> menvcfg(2).asBool,   // LPE (bit 2 of menvcfg)
-          ModeU -> Mux(HasNExtension.B, senvcfg(2).asBool, false.B)  // LPE (bit 2 of senvcfg)
+          ModeU -> senvcfg(2).asBool    // LPE (bit 2 of senvcfg) - XiangShan always has S-mode
         ))
         arch_elp_restore.valid := true.B
         arch_elp_restore.bits := lpeEnabled && mstatusOld.mpelp.asBool
@@ -1029,7 +1030,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
         val targetMode = Cat(0.U(1.W), mstatusOld.spp)  // Convert 1-bit spp to 2-bit mode
         val lpeEnabled = MuxLookup(targetMode, false.B, Seq(
           ModeS -> menvcfg(2).asBool,   // LPE (bit 2 of menvcfg)
-          ModeU -> Mux(HasNExtension.B, senvcfg(2).asBool, false.B)  // LPE (bit 2 of senvcfg)
+          ModeU -> senvcfg(2).asBool    // LPE (bit 2 of senvcfg) - XiangShan always has S-mode
         ))
         arch_elp_restore.valid := true.B
         arch_elp_restore.bits := lpeEnabled && mstatusOld.spelp.asBool
