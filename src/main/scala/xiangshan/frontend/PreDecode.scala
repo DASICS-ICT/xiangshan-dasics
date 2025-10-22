@@ -25,6 +25,7 @@ import xiangshan._
 import xiangshan.frontend.icache._
 import xiangshan.backend.decode.isa.predecode.PreDecodeInst
 import xiangshan.backend.fu.util.SdtrigExt
+import xiangshan.backend.fu.ZicfilpPreDecodeInfo
 
 trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst{
   def pcAligned(pc: UInt) = pc(1,0) === 0.U // pc is aligned to 4 bytes
@@ -72,7 +73,7 @@ trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUCons
 
   def isJalrForELP(instr:UInt) = {
     val isjalr = isJalr(instr)
-    // Fix: Check rs1 (source register) instead of rd (destination register)
+    // Fix: Check rs1 (source register) 
     // According to Zicfilp spec: ELP should be set when rs1 ∉ {x1, x5, x7}
     val rs1 = Mux(isRVC(instr), instr(11, 7), instr(19, 15))
     isjalr && !isLink(rs1) && !isGuard(rs1)
@@ -120,6 +121,7 @@ class PreDecodeInfo extends Bundle {  // 8 bit
   val brType  = UInt(2.W)
   val isCall  = Bool()
   val isRet   = Bool()
+  val cfiInfo = new ZicfilpPreDecodeInfo
   //val excType = UInt(3.W)
   def isBr    = brType === BrType.branch
   def isJal   = brType === BrType.jal
@@ -184,8 +186,6 @@ class PreDecode(implicit p: Parameters) extends XSModule with HasPdConst{
     io.out.pd(i).isCall        := isCall
     io.out.pd(i).isRet         := isRet
 
-<<<<<<< HEAD
-=======
     // for Zicfilp
     if (HasZicfilp) {
       io.out.pd(i).cfiInfo.isJalrForELP := isJalrForELP(inst)
@@ -196,7 +196,6 @@ class PreDecode(implicit p: Parameters) extends XSModule with HasPdConst{
       io.out.pd(i).cfiInfo := DontCare
     }
 
->>>>>>> 83eb80692 ([Feat]: support Zicfilp software label check via auipc/jump pipeline)
     //io.out.expInstr(i)         := expander.io.out.bits
     io.out.instr(i)              :=inst
     io.out.jumpOffset(i)       := Mux(io.out.pd(i).isBr, brOffset, jalOffset)

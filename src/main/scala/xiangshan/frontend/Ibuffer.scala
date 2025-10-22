@@ -24,7 +24,7 @@ import utils._
 import xiangshan.ExceptionNO._
 import xiangshan.backend.fu.DasicsFaultReason
 import xiangshan.backend.fu.DasicsRespDataBundle
-import xiangshan.backend.fu.ZicfilpRespDataBundle
+import xiangshan.backend.fu.SpecELPRespDataBundle
 import xiangshan.backend.fu.util.HasCSRConst
 class IbufPtr(implicit p: Parameters) extends CircularQueuePtr[IbufPtr](
   p => p(XSCoreParamsKey).IBufSize
@@ -53,7 +53,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
   val dasicsBrResp = new DasicsRespDataBundle
-  val zicfilpResp  = new ZicfilpRespDataBundle // for zicfilp
+  val zicfilpResp  = new SpecELPRespDataBundle // for zicfilp
   val lastBranch: UInt = UInt(VAddrBits.W)
 
   def fromFetch(fetch: FetchToIBuffer, i: Int): IBufEntry = {
@@ -67,13 +67,14 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     ipf := fetch.ipf(i)
     acf := fetch.acf(i)
     if (HasZicfilp) {
-      scf := fetch.elpInfo.hasException(i)
-      zicfilpResp.needCheckLabel := fetch.elpInfo.needCheckLabel(i)
-      zicfilpResp.shouldRaiseElp := fetch.elpInfo.shouldRaiseElp(i) // should raise arch_elp
-      zicfilpResp.shouldClearElp := fetch.elpInfo.shouldClearElp(i) // should clear elp state (for lpad)
-      zicfilpResp.label          := fetch.pd(i).cfiInfo.label       // label for lpad
+      scf := fetch.zicfilpInfo.hasException(i)
+      zicfilpResp.hasexceptiom   := fetch.zicfilpInfo.hasException(i)
+      zicfilpResp.needCheckLabel := fetch.zicfilpInfo.needCheckLabel(i)
+      zicfilpResp.shouldRaiseElp := fetch.zicfilpInfo.shouldRaiseElp(i)
+      zicfilpResp.shouldClearElp := fetch.zicfilpInfo.shouldClearElp(i)
+      zicfilpResp.label          := fetch.zicfilpInfo.label(i)
     } else {
-      scf := DontCare 
+      scf := DontCare
       zicfilpResp := DontCare
     }
     crossPageIPFFix := fetch.crossPageIPFFix(i)
@@ -100,7 +101,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
       cf.exceptionVec(softwareCheckFault) := scf
       cf.zicfilpDataInfo := zicfilpResp
     } else {
-      cf.exceptionVec(softwareCheckFault) := false.B // if not HasZicfilp, this field is not used
+      //cf.exceptionVec(softwareCheckFault) := false.B // if not HasZicfilp, this field is not used
       cf.zicfilpDataInfo := DontCare // if not HasZicfilp, this field is not used
     }
     cf.exceptionVec(instrAccessFault) := acf

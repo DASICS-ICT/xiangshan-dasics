@@ -21,7 +21,7 @@ import chisel3.util._
 import chisel3.experimental.chiselName
 import xiangshan._
 import xiangshan.frontend.icache._
-import xiangshan.backend.fu.{DasicsFaultReason, DasicsRespDataBundle}
+import xiangshan.backend.fu.{DasicsFaultReason, DasicsRespDataBundle, SpecELPResp}
 import utils._
 import scala.math._
 import scala.{Tuple2 => &}
@@ -129,6 +129,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val dasicsUntrusted = Vec(PredictWidth, Bool())
   val dasicsBrResp = new DasicsRespDataBundle  // last branch to this instr block is illegal
   val lastBranch: UInt = UInt(VAddrBits.W)
+  val zicfilpInfo = new SpecELPResp
 }
 
 // class BitWiseUInt(val width: Int, val init: UInt) extends Module {

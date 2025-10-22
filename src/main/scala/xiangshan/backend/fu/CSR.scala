@@ -422,6 +422,11 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val spkctl = RegInit(UInt(XLEN.W), 0.U)
   val spkctlMask = "h3".U(XLEN.W)  // 0: pke, 1: pks
 
+  // Zicfilp CSRs
+  val menvcfg = RegInit(UInt(XLEN.W), 0.U)  // Machine Environment Configuration (LPE bit 2)
+  val senvcfg = RegInit(UInt(XLEN.W), 0.U)  // Supervisor Environment Configuration (LPE bit 2)
+  val mseccfg = RegInit(UInt(XLEN.W), 0.U)  // Machine Security Configuration (MLPE bit 10)
+
   // sbpctl
   // Bits 0-7: {LOOP, RAS, SC, TAGE, BIM, BTB, uBTB}
   val sbpctl = RegInit(UInt(XLEN.W), "h7f".U)
@@ -758,6 +763,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(Spkctl, spkctl, spkctlMask)
   )
 
+  val zicfiMapping = Map(
+      MaskedRegMap(Mseccfg, mseccfg, "h400".U(XLEN.W)),
+      MaskedRegMap(Menvcfg, menvcfg, "h4".U(XLEN.W)),
+      MaskedRegMap(Senvcfg, senvcfg, "h4".U(XLEN.W))
+    )
+
   val mapping = basicPrivMapping ++
                 perfCntMapping ++
                 pmpMapping ++
@@ -766,7 +777,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
                 (if (HasFPU) fcsrMapping else Nil) ++
                 (if (HasCustomCSRCacheOp) cacheopMapping else Nil) ++
                 (if (HasNExtension) userMapping else Nil) ++
-                (if (HasDasics) dasicsMapping else Nil)
+                (if (HasDasics) dasicsMapping else Nil) ++
+                (if (HasZicfilp) zicfiMapping else Nil)
 
   println("XiangShan CSR Lists")
 

@@ -707,9 +707,9 @@ class NewIFU(implicit p: Parameters) extends XSModule
     spec_elp.io.instInfo.bits.inst_valid := Mux(f3_req_is_mmio, mmio_inst_valid, f3_instr_valid)
     spec_elp.io.instInfo.bits.predecodeInfo := Mux(f3_req_is_mmio, mmio_predecode_info, VecInit(f3_pd.map(_.cfiInfo)))
     spec_elp.io.arch_elp_sync         := io.cfiInfo.arch_elp_sync
-    io.toIbuffer.bits.elpInfo         := spec_elp.io.resp.bits
+    io.toIbuffer.bits.zicfilpInfo         := spec_elp.io.resp.bits
   } else {
-    io.toIbuffer.bits.elpInfo := DontCare
+    io.toIbuffer.bits.zicfilpInfo := DontCare
   }
 
   /** external predecode for MMIO instruction */
@@ -735,9 +735,6 @@ class NewIFU(implicit p: Parameters) extends XSModule
     io.toIbuffer.bits.crossPageIPFFix(0) := mmio_resend_pf
 
     io.toIbuffer.bits.enqEnable   := f3_mmio_range.asUInt
-    if(HasZicfilp){
-      io.toIbuffer.bits.pd(0).cfiInfo.label := lpadLabel(inst)
-    }
 
     mmioFlushWb.bits.pd(0).valid   := true.B
     mmioFlushWb.bits.pd(0).isRVC   := currentIsRVC

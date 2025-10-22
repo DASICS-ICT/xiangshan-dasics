@@ -149,8 +149,8 @@ package object xiangshan {
   }
 
   object ExceptionVec {
-    // 16 RV exception + 2 Dasics exception
-    def apply() = Vec(16 + 2, Bool())
+    // 16 RV exception + 2 Dasics exception + 1 Zicfilp exception (softwareCheckFault at index 18)
+    def apply() = Vec(19, Bool())
   }
 
   object PMAMode {
@@ -536,6 +536,7 @@ object JumpOpType {
     def storePageFault      = 15
 
     //exception 16-23 is reserve
+    def softwareCheckFault  = 18  // Zicfilp: Software Check exception
     def DasicsExcOffset = 8
     //  Dasics excetption       number    offset
     def dasicsUCheckFault = 24 - DasicsExcOffset

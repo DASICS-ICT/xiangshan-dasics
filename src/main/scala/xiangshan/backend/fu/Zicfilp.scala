@@ -42,6 +42,15 @@ class SpecELPResp(implicit p: Parameters) extends XSBundle {
     val shouldRaiseElp   = Vec(PredictWidth, Bool()) // should raise arch_elp
     val shouldClearElp   = Vec(PredictWidth, Bool()) // should clear elp state (for lpad)
     val needCheckLabel   = Vec(PredictWidth, Bool())
+    val label            = Vec(PredictWidth, UInt(20.W))
+}
+
+class SpecELPRespDataBundle(implicit p: Parameters) extends XSBundle {
+    val hasexceptiom   = Bool()
+    val shouldRaiseElp = Bool() // should raise arch_elp
+    val shouldClearElp = Bool() // should clear arch_elp
+    val needCheckLabel = Bool()
+    val label          = UInt(20.W) // label for lpad
 }
 
 class SpecELPIO(implicit p: Parameters) extends XSBundle with HasCSRConst {
@@ -122,16 +131,11 @@ class SpecELP(implicit p: Parameters) extends XSModule with HasCSRConst {
 
     // Only send valid response when not flushing to ensure consistency
     io.resp.valid := io.instInfo.valid && zicfilp_enable && !io.flush
-    io.resp.bits.hasException := exceptionVec
-    io.resp.bits.shouldRaiseElp := shouldRaiseElpVec
-    io.resp.bits.shouldClearElp := shouldClearElpVec
-    io.resp.bits.needCheckLabel := needCheckLabelVec
-}
-class ZicfilpRespDataBundle(implicit p: Parameters) extends XSBundle{
-    val shouldRaiseElp = Bool() // should raise arch_elp
-    val shouldClearElp = Bool() // should clear arch_elp
-    val needCheckLabel = Bool()
-    val label          = UInt(20.W) // label for lpad
+    io.resp.bits.hasException := VecInit(exceptionVec.map(_ && io.resp.valid))
+    io.resp.bits.shouldRaiseElp := VecInit(shouldRaiseElpVec.map(_ && io.resp.valid))
+    io.resp.bits.shouldClearElp := VecInit(shouldClearElpVec.map(_ && io.resp.valid))
+    io.resp.bits.needCheckLabel := VecInit(needCheckLabelVec.map(_ && io.resp.valid))
+    io.resp.bits.label := VecInit((0 until PredictWidth).map(i => instPdVec(i).label))
 }
 
 class ZicfilpLabelCheckIO(implicit p: Parameters) extends XSBundle {

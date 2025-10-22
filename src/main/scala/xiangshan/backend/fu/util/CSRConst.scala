@@ -99,6 +99,7 @@ trait HasCSRConst {
   val Sie           = 0x104
   val Stvec         = 0x105
   val Scounteren    = 0x106
+  val Senvcfg       = 0x10A
 
   // Supervisor Trap Handling
   val Sscratch      = 0x140
@@ -147,6 +148,7 @@ trait HasCSRConst {
   val Mie           = 0x304
   val Mtvec         = 0x305
   val Mcounteren    = 0x306
+  val Menvcfg       = 0x30A
 
   // Machine Trap Handling
   val Mscratch      = 0x340
@@ -159,6 +161,7 @@ trait HasCSRConst {
   // TBD
   val PmpcfgBase    = 0x3A0
   val PmpaddrBase   = 0x3B0
+  val Mseccfg       = 0x747
   // Machine level PMA
   val PmacfgBase    = 0x7C0
   val PmaaddrBase   = 0x7C8 // 64 entry at most
