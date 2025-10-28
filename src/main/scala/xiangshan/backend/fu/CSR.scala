@@ -142,12 +142,15 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   class MstatusStruct extends Bundle {
     val sd = Output(UInt(1.W))
 
-    val pad1 = if (XLEN == 64) Output(UInt(25.W)) else null
+    val pad1 = if (XLEN == 64) Output(UInt(22.W)) else null  // bits 62-42
+    val mpelp = if (XLEN == 64) Output(UInt(1.W)) else null  // bit 41: M-mode Previous Expected Landing Pad
+    val pad2 = if (XLEN == 64) Output(UInt(3.W)) else null   // bits 40-38
     val mbe  = if (XLEN == 64) Output(UInt(1.W)) else null
     val sbe  = if (XLEN == 64) Output(UInt(1.W)) else null
     val sxl  = if (XLEN == 64) Output(UInt(2.W))  else null
     val uxl  = if (XLEN == 64) Output(UInt(2.W))  else null
-    val pad0 = if (XLEN == 64) Output(UInt(9.W))  else Output(UInt(8.W))
+    val pad0 = if (XLEN == 64) Output(UInt(8.W))  else Output(UInt(8.W))  // bits 31-24
+    val spelp = Output(UInt(1.W))  // bit 23: S-mode Previous Expected Landing Pad
 
     val tsr = Output(UInt(1.W))
     val tw = Output(UInt(1.W))
@@ -278,24 +281,29 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val mstatus = RegInit("ha00002000".U(XLEN.W))
 
   // mstatus Value Table
-  // | sd   |
-  // | pad1 |
-  // | sxl  | hardlinked to 10, use 00 to pass xv6 test
-  // | uxl  | hardlinked to 10
-  // | pad0 |
-  // | tsr  |
-  // | tw   |
-  // | tvm  |
-  // | mxr  |
-  // | sum  |
-  // | mprv |
-  // | xs   | 00 |
-  // | fs   | 01 |
-  // | mpp  | 00 |
-  // | hpp  | 00 |
-  // | spp  | 0 |
-  // | pie  | 0000 | pie.h is used as UBE
-  // | ie   | 0000 |
+  // | sd    | bit 63 |
+  // | pad1  | bits 62-42 |
+  // | mpelp | bit 41 | M-mode Previous Expected Landing Pad (Zicfilp)
+  // | pad2  | bits 40-38 |
+  // | mbe   | bit 37 |
+  // | sbe   | bit 36 |
+  // | sxl   | bits 35-34 | hardlinked to 10, use 00 to pass xv6 test
+  // | uxl   | bits 33-32 | hardlinked to 10
+  // | pad0  | bits 31-24 |
+  // | spelp | bit 23 | S-mode Previous Expected Landing Pad (Zicfilp)
+  // | tsr   | bit 22 |
+  // | tw    | bit 21 |
+  // | tvm   | bit 20 |
+  // | mxr   | bit 19 |
+  // | sum   | bit 18 |
+  // | mprv  | bit 17 |
+  // | xs    | bits 16-15 | 00 |
+  // | fs    | bits 14-13 | 01 |
+  // | mpp   | bits 12-11 | 00 |
+  // | hpp   | bits 10-9  | 00 |
+  // | spp   | bit 8 | 0 |
+  // | pie   | bits 7,5,4 | 0000 | pie.h is used as UBE
+  // | ie    | bits 3,1,0 | 0000 |
 
   val mstatusStruct = mstatus.asTypeOf(new MstatusStruct)
   def mstatusUpdateSideEffect(mstatus: UInt): UInt = {
@@ -305,17 +313,23 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   }
 
   val mstatusWMask = (~ZeroExt((
-    GenMask(XLEN - 2, 36) | // WPRI
+    GenMask(XLEN - 2, 42) | // WPRI
+    // mpelp(bit 41) is writable
+    GenMask(40, 36)       | // WPRI
     GenMask(35, 32)       | // SXL and UXL cannot be changed
-    GenMask(31, 23)       | // WPRI
+    GenMask(31, 24)       | // WPRI
+    // spelp(bit 23) is writable
     GenMask(16, 15)       | // XS is read-only
     GenMask(10, 9)        | // WPRI
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
   ), 64)).asUInt
   val mstatusMask = (~ZeroExt((
-    GenMask(XLEN - 2, 36) | // WPRI
-    GenMask(31, 23)       | // WPRI
+    GenMask(XLEN - 2, 42) | // WPRI
+    // mpelp(bit 41) is readable
+    GenMask(40, 36)       | // WPRI
+    GenMask(31, 24)       | // WPRI
+    // spelp(bit 23) is readable
     GenMask(10, 9)        | // WPRI
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
@@ -325,6 +339,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val mideleg = RegInit(UInt(XLEN.W), 0.U)
   val mscratch = RegInit(UInt(XLEN.W), 0.U)
 
+  // Zicfilp CSRs
+  val menvcfg = RegInit(UInt(XLEN.W), 0.U)
+  val menvcfgMask = "h4".U(XLEN.W)  // bit 2: LPE
+  val senvcfg = RegInit(UInt(XLEN.W), 0.U)
+  val senvcfgMask = "h4".U(XLEN.W)  // bit 2: LPE
+  val mseccfg = RegInit(UInt(XLEN.W), 0.U)
+  val mseccfgMask = "h400".U(XLEN.W)  // bit 10: MLPE
 
   // Hart Priviledge Mode
   val privilegeMode = RegInit(UInt(2.W), ModeM)
@@ -372,12 +393,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // Superviser-Level CSRs
 
   // val sstatus = RegInit(UInt(XLEN.W), "h00000000".U)
-  val sstatusWmask = "hc6133".U(XLEN.W)
+  val sstatusWmask = "h8c6133".U(XLEN.W)
   // Sstatus Write Mask
   // -------------------------------------------------------
-  //    19           9   5     2
-  // 0  1100 0000 0001 0010 0010
-  // 0  c    0    1    2    2
+  //    23 19 18      14 13   8 5 4   1 0
+  // 0  1000 1100 0110 0001 0011 0011
+  // 0  8    c    6    1    3    3
   // -------------------------------------------------------
   val sstatusRmask = sstatusWmask | "h8000000300018000".U
   // Sstatus Read Mask = (SSTATUS_WMASK | (0xf << 13) | (1ull << 63) | (3ull << 32))
@@ -648,6 +669,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     //--- Supervisor Protection and Translation ---
     MaskedRegMap(Satp, satp, satpMask, MaskedRegMap.NoSideEffect, satpMask),
 
+    //--- Supervisor Configuration (Zicfilp) ---
+    MaskedRegMap(Senvcfg, senvcfg, senvcfgMask),
+
     //--- Supervisor Custom Read/Write Registers
     MaskedRegMap(Sbpctl, sbpctl),
     MaskedRegMap(Spfctl, spfctl),
@@ -673,6 +697,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),
     MaskedRegMap(Mcounteren, mcounteren),
 
+    //--- Machine Configuration (Zicfilp) ---
+    MaskedRegMap(Menvcfg, menvcfg, menvcfgMask),
+
     //--- Machine Trap Handling ---
     MaskedRegMap(Mscratch, mscratch),
     MaskedRegMap(Mepc, mepc, mepcMask, MaskedRegMap.NoSideEffect, mepcMask),
@@ -690,6 +717,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       x => Tdata1Bundle.Read(x)),
     MaskedRegMap(Tdata2, tdata2RegVec(tselectPhy)),
     MaskedRegMap(Tinfo, tinfo, 0.U(XLEN.W), MaskedRegMap.Unwritable),
+
+    //--- Machine Security Configuration (Zicfilp) ---
+    MaskedRegMap(Mseccfg, mseccfg, mseccfgMask),
 
     //--- Debug Mode ---
     MaskedRegMap(Dcsr, dcsr, dcsrMask, dcsrUpdateSideEffect),
@@ -794,6 +824,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
                    (addr >= Uscratch.U) && (addr <= Utimer.U)
   val addrIsMPK  = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
+
+  val addrIsEnvCfg = (addr === Senvcfg.U) || (addr === Menvcfg.U) || (addr === Mseccfg.U)
 
   val addrInProtection = addrInDasics || addrInNExt || addrIsMPK
 
@@ -932,7 +964,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
   val frm_change = w_fcsr_change_rm || w_frm_change_rm
   val isXRet = valid && func === CSROpType.jmp && !isEcall && !isEbreak
-  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
+  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate || (addrInDasics && wen) || (addrIsEnvCfg && wen)
 
   private val illegalRetTarget = WireInit(false.B)
 

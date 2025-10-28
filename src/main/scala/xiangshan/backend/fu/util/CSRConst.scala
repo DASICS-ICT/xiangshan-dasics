@@ -110,6 +110,9 @@ trait HasCSRConst {
   // Supervisor Protection and Translation
   val Satp          = 0x180
 
+  // Supervisor Configuration (for Zicfilp)
+  val Senvcfg       = 0x10A
+
   // Supervisor Custom Read/Write
   val Sbpctl        = 0x5C0
   val Spfctl        = 0x5C1
@@ -147,6 +150,9 @@ trait HasCSRConst {
   val Mie           = 0x304
   val Mtvec         = 0x305
   val Mcounteren    = 0x306
+
+  // Machine Configuration (for Zicfilp)
+  val Menvcfg       = 0x30A
 
   // Machine Trap Handling
   val Mscratch      = 0x340
@@ -238,6 +244,9 @@ trait HasCSRConst {
   val Tdata2 = 0x7A2
   val Tinfo = 0x7A4
   val Tcontrol = 0x7A5
+
+  // Machine Security Configuration (for Zicfilp)
+  val Mseccfg       = 0x747
 
   // Debug Mode Registers
   val Dcsr          = 0x7B0
