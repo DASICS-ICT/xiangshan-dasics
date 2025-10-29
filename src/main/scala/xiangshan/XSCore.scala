@@ -390,6 +390,10 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   csrioIn.trapTarget <> ctrlBlock.io.robio.toCSR.trapTarget
   csrioIn.interrupt <> ctrlBlock.io.robio.toCSR.intrBitSet
   csrioIn.wfi_event <> ctrlBlock.io.robio.toCSR.wfiEvent
+  // Zicfilp: ELP state management between ROB and CSR
+  csrioIn.elpUpdate <> ctrlBlock.io.robio.toCSR.elpUpdate
+  csrioIn.lpEnabled <> ctrlBlock.io.robio.toCSR.lpEnabled
+  csrioIn.elpSync <> ctrlBlock.io.robio.toCSR.elpSync
   csrioIn.memExceptionVAddr <> memBlock.io.lsqio.exceptionAddr.vaddr
 
   csrioIn.externalInterrupt.msip := outer.clint_int_sink.in.head._1(0)

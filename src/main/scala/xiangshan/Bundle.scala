@@ -185,6 +185,11 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   val elpOp = UInt(2.W)      // ELP操作类型（none/set/clear）
   val elpLabelOk = Bool()    // LPAD的label检查结果（Execute阶段填充）
 
+  // Zicfilp: xRET writeback - write ELP restore value to ROB
+  // Valid when xRET executes, value is the restored ELP from xPELP
+  val elpWritebackValid = Bool()
+  val elpWritebackValue = Bool()
+
   private def allSignals = srcType ++ Seq(fuType, fuOpType, rfWen, fpWen,
     isXSTrap, noSpecExec, blockBackward, flushPipe, selImm)
 
@@ -195,6 +200,8 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
     // Zicfilp字段默认值
     elpOp := ElpOpType.none
     elpLabelOk := true.B
+    elpWritebackValid := false.B
+    elpWritebackValue := false.B
     this
   }
 
@@ -382,6 +389,9 @@ class RobDispatchData(implicit p: Parameters) extends XSBundle {
   val old_pdest = UInt(PhyRegIdxWidth.W)
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
+
+  // Zicfilp: CFI control signal (static, from decode)
+  val isLpad = Bool()         // Is LPAD instruction
 }
 
 class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {

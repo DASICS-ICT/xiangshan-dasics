@@ -26,6 +26,7 @@ import xiangshan._
 import xiangshan.backend.exu.ExuConfig
 import xiangshan.frontend.FtqPtr
 import xiangshan.backend.fu.DasicsConst
+import xiangshan.backend.fu.ElpOpType
 
 class RobPtr(implicit p: Parameters) extends CircularQueuePtr[RobPtr](
   p => p(XSCoreParamsKey).RobSize
@@ -59,6 +60,11 @@ class RobCSRIO(implicit p: Parameters) extends XSBundle {
   val perfinfo   = new Bundle {
     val retiredInstr = Output(UInt(3.W))
   }
+
+  // Zicfilp: ELP state management between ROB and CSR
+  val elpUpdate = Output(Valid(Bool()))   // ROB → CSR: ELP update at commit
+  val lpEnabled = Input(Bool())            // CSR → ROB: Landing Pad Enable (LPE) status
+  val elpSync = Input(Valid(Bool()))       // CSR → ROB: ELP synchronization after xRET
 }
 
 class RobLsqIO(implicit p: Parameters) extends XSBundle {
@@ -321,6 +327,20 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // They have side effects on the states of the processor before they write back
   val interrupt_safe = RegInit(VecInit(Seq.fill(RobSize)(true.B)))
 
+  // Zicfilp: ELP (Expected Landing Pad) state snapshot for each ROB entry
+  // Records the ELP state AFTER this instruction executes (for precise redirect recovery)
+  val elp_after = Mem(RobSize, Bool())
+
+  // Zicfilp: Speculative ELP at ROB head (enqueue position)
+  // Updated at: (1) enqueue based on ELP chain, (2) commit to track architectural state,
+  //             (3) redirect to recover from misspeculation, (4) xRET sync from CSR
+  val head_elp = RegInit(Bool(), false.B)
+
+  // Zicfilp: ELP state BEFORE each instruction executes
+  // Written at enqueue stage, read at writeback for CFI Type 2 exception check
+  // Optimization: elpLabelOk not stored; CFI Type 2 checked immediately at writeback
+  val elp_before = Mem(RobSize, Bool())
+
   // data for debug
   // Warn: debug_* prefix should not exist in generated verilog.
   val debug_microOp = Mem(RobSize, new MicroOp)
@@ -402,12 +422,38 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.enq.canAccept := allowEnqueue && !hasBlockBackward
   io.enq.resp      := allocatePtrVec
   val canEnqueue = VecInit(io.enq.req.map(_.valid && io.enq.canAccept))
+
+  // Zicfilp: Calculate ELP chain for enqueue
+  // elpChain(i) represents ELP state before instruction i enqueues
+  // If instruction i enqueues, elpChain(i+1) = elp_after(i); otherwise transparent (hole)
+  val lpEnabled = io.csr.lpEnabled
+  val elpChain = Wire(Vec(RenameWidth + 1, Bool()))
+  elpChain(0) := head_elp
+
+  for (i <- 0 until RenameWidth) {
+    when (canEnqueue(i)) {
+      val enqUop = io.enq.req(i).bits
+      val elp_after_val = MuxCase(elpChain(i), Seq(
+        (enqUop.ctrl.elpOp === ElpOpType.set) -> true.B,
+        (enqUop.ctrl.elpOp === ElpOpType.clear) -> false.B
+      ))
+      elpChain(i + 1) := elp_after_val
+    }.otherwise {
+      elpChain(i + 1) := elpChain(i)  // Transparent for holes
+    }
+  }
+
   val timer = GTimer()
   for (i <- 0 until RenameWidth) {
     // we don't check whether io.redirect is valid here since redirect has higher priority
     when (canEnqueue(i)) {
       val enqUop = io.enq.req(i).bits
       val enqIndex = allocatePtrVec(i).value
+
+      // Zicfilp: Write ELP state for this instruction
+      elp_before(enqIndex) := elpChain(i)
+      elp_after(enqIndex) := elpChain(i + 1)
+
       // store uop in data module and debug_microOp Vec
       debug_microOp(enqIndex) := enqUop
       debug_microOp(enqIndex).debugInfo.dispatchTime := timer
@@ -441,6 +487,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       }
     }
   }
+
   val dispatchNum = Mux(io.enq.canAccept, PopCount(io.enq.req.map(_.valid)), 0.U)
   io.enq.isEmpty   := RegNext(isEmpty && !VecInit(io.enq.req.map(_.valid)).asUInt.orR)
 
@@ -635,6 +682,24 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.csr.fflags := RegNext(fflags)
   io.csr.dirty_fs := RegNext(dirty_fs)
 
+  // Zicfilp: Update ELP to CSR when instructions commit
+  // Find the last committed instruction's ELP
+  val commitElp = Wire(Bool())
+  commitElp := false.B  // default value
+
+  // Iterate from first to last, each valid instruction overwrites commitElp
+  // So the LAST valid instruction's elp_after will be kept
+  for (i <- 0 until CommitWidth) {
+    when (io.commits.commitValid(i)) {
+      commitElp := elp_after(deqPtrVec(i).value)
+    }
+  }
+
+  // Send to CSR only when at least one instruction commits and LPE is enabled
+  val hasCommit = io.commits.isCommit && io.commits.commitValid.asUInt.orR
+  io.csr.elpUpdate.valid := RegNext(hasCommit && lpEnabled)
+  io.csr.elpUpdate.bits := RegNext(commitElp)
+
   // commit load/store to lsq
   val ldCommitVec = VecInit((0 until CommitWidth).map(i => io.commits.commitValid(i) && io.commits.info(i).commitType === CommitType.LOAD))
   val stCommitVec = VecInit((0 until CommitWidth).map(i => io.commits.commitValid(i) && io.commits.info(i).commitType === CommitType.STORE))
@@ -747,6 +812,25 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     XSInfo(p"rolling back: $enqPtr $deqPtr walk $walkPtr walkcnt $walkCounter\n")
   }
 
+  // Zicfilp: head_elp maintenance with priority control
+  // Three update sources (highest to lowest priority):
+  // 1. Sync from CSR (exception clears ELP directly, needs immediate sync)
+  // 2. Redirect recovery (branch misprediction restores from elp_after)
+  // 3. Enqueue update (normal instruction dispatch)
+
+  // Priority-controlled head_elp update
+  when (io.csr.elpSync.valid) {
+    // Highest priority: CSR directly modified elp (exception clear)
+    // elpSync sends the updated elp value immediately after CSR modifies it
+    head_elp := io.csr.elpSync.bits
+  }.elsewhen (io.redirect.valid) {
+    // Medium priority: Redirect - restore from elp_after of redirect point
+    // When redirect occurs at instruction X, X has executed, so use elp_after(X)
+    head_elp := elp_after(io.redirect.bits.robIdx.value)
+  }.elsewhen (canEnqueue.asUInt.orR) {
+    // Lowest priority: Normal enqueue - advance through ELP chain
+    head_elp := elpChain(RenameWidth)
+  }
 
   /**
     * States
@@ -851,6 +935,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     wdata.old_pdest := req.old_pdest
     wdata.ftqIdx := req.cf.ftqPtr
     wdata.ftqOffset := req.cf.ftqOffset
+    wdata.isLpad := req.ctrl.isLpad  // Zicfilp
   }
   dispatchData.io.raddr := commitReadAddr_next
 
@@ -859,7 +944,24 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until RenameWidth) {
     exceptionGen.io.enq(i).valid := canEnqueue(i)
     exceptionGen.io.enq(i).bits.robIdx := io.enq.req(i).bits.robIdx
-    exceptionGen.io.enq(i).bits.exceptionVec := ExceptionNO.selectFrontend(io.enq.req(i).bits.cf.exceptionVec)
+    val frontendExceptionVec = ExceptionNO.selectFrontend(io.enq.req(i).bits.cf.exceptionVec)
+    exceptionGen.io.enq(i).bits.exceptionVec := frontendExceptionVec
+
+    // Zicfilp: CFI violations detected at enqueue (all use softwareCheckFault with tval=2)
+    val enqUop = io.enq.req(i).bits
+    val elpBeforeEnq = elpChain(i)
+    val isLpadInstr = enqUop.ctrl.isLpad
+    val pcMisaligned = enqUop.cf.pc(1, 0).orR  // PC[1:0] != 0 means not 4-byte aligned
+
+    // Violation 1: ELP=1 but instruction is not LPAD
+    val cfiViolation1 = lpEnabled && elpBeforeEnq && !isLpadInstr
+    // Violation 2: LPAD with ELP=1 but PC not 4-byte aligned (RVC LPAD illegal when ELP=1)
+    val cfiViolation2 = lpEnabled && elpBeforeEnq && isLpadInstr && pcMisaligned
+
+    when (cfiViolation1 || cfiViolation2) {
+      exceptionGen.io.enq(i).bits.exceptionVec(ExceptionNO.softwareCheckFault) := true.B
+    }
+
     exceptionGen.io.enq(i).bits.flushPipe := io.enq.req(i).bits.ctrl.flushPipe
     exceptionGen.io.enq(i).bits.replayInst := false.B
     exceptionGen.io.enq(i).bits.dasicsFaultReason := io.enq.req(i).bits.cf.dasicsFaultReason
@@ -877,7 +979,24 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for ((((configs, wb), exc_wb), i) <- exceptionPorts.zip(exceptionGen.io.wb).zipWithIndex) {
     exc_wb.valid                := wb.valid
     exc_wb.bits.robIdx          := wb.bits.uop.robIdx
-    exc_wb.bits.exceptionVec    := ExceptionNO.selectByExu(wb.bits.uop.cf.exceptionVec, configs)
+    val exuExceptionVec = ExceptionNO.selectByExu(wb.bits.uop.cf.exceptionVec, configs)
+    exc_wb.bits.exceptionVec    := exuExceptionVec
+
+    // Zicfilp: CFI Type 2 violation - LPAD with ELP=1 but label mismatch
+    // Check immediately at writeback, no need to store elpLabelOk
+    val wbUop = wb.bits.uop
+    val robIdx = wbUop.robIdx.value
+    val cfiType2 = lpEnabled && wbUop.ctrl.isLpad && elp_before(robIdx) && !wbUop.ctrl.elpLabelOk
+    when (wb.valid && cfiType2) {
+      exc_wb.bits.exceptionVec(ExceptionNO.softwareCheckFault) := true.B
+    }
+
+    // Zicfilp: xRET writeback - update elp_after with restored ELP value
+    // xRET sends elpWriteback signal to correct the speculative elp_after
+    when (wb.valid && wbUop.ctrl.elpWritebackValid) {
+      elp_after(robIdx) := wbUop.ctrl.elpWritebackValue
+    }
+
     exc_wb.bits.dasicsFaultReason  := wb.bits.uop.cf.dasicsFaultReason
     exc_wb.bits.flushPipe       := configs.exists(_.flushPipe).B && wb.bits.uop.ctrl.flushPipe
     exc_wb.bits.replayInst      := configs.exists(_.replayInst).B && wb.bits.uop.ctrl.replayInst

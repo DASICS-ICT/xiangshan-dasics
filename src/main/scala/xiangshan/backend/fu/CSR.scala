@@ -93,6 +93,10 @@ class CSRFileIO(implicit p: Parameters) extends XSBundle {
   val trapTarget = Output(UInt(VAddrBits.W))
   val interrupt = Output(Bool())
   val wfi_event = Output(Bool())
+  // Zicfilp: ELP state management with ROB
+  val elpUpdate = Flipped(Valid(Bool()))   // ROB → CSR: ELP update at commit
+  val lpEnabled = Output(Bool())            // CSR → ROB: Landing Pad Enable (LPE) status
+  val elpSync = Output(Valid(Bool()))       // CSR → ROB: ELP synchronization after xRET
   // from LSQ
   val memExceptionVAddr = Input(UInt(VAddrBits.W))
   // from outside cpu,externalInterrupt
@@ -353,6 +357,22 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   // Hart Priviledge Mode
   val privilegeMode = RegInit(UInt(2.W), ModeM)
+
+  
+  // Zicfilp: Check if Landing Pad Enable (LPE) is active based on privilege mode
+  // M-mode: mseccfg.MLPE (bit 10)
+  // S-mode: menvcfg.LPE (bit 2)
+  // U-mode: senvcfg.LPE (bit 2)
+  def zicfilpLpEnabled(): Bool = {
+    val mlpe = mseccfg(10)        // M-mode Landing Pad Enable
+    val slpe = menvcfg(2)         // S-mode Landing Pad Enable
+    val ulpe = senvcfg(2)         // U-mode Landing Pad Enable
+    MuxCase(false.B, Seq(
+      (privilegeMode === ModeM) -> mlpe,
+      (privilegeMode === ModeS) -> slpe,
+      (privilegeMode === ModeU) -> ulpe
+    ))
+  }
 
   // PMP Mapping
   val pmp = Wire(Vec(NumPMP, new PMPEntry())) // just used for method parameter
@@ -989,6 +1009,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     illegalRetTarget := true.B // when illegalRetTarget setted, retTarget should never be used
   }
 
+  // Zicfilp: xRET writeback - calculate ELP restore value to send to ROB
+  // This value will be written to elp_after in ROB, then committed to CSR.elp
+  val mstatusForElp = mstatus.asTypeOf(new MstatusStruct)
+  val elpRestoreValue = MuxCase(false.B, Seq(
+    (isMret && !illegalMret) -> (if (XLEN == 64) mstatusForElp.mpelp else false.B),
+    (isSret && !illegalSret && !illegalSModeSret) -> mstatusForElp.spelp
+  ))
+  io.out.bits.uop.ctrl.elpWritebackValid := valid && isXRet && !illegalRetTarget
+  io.out.bits.uop.ctrl.elpWritebackValue := elpRestoreValue
+
   // Mux tree for regs
   when (valid) {
     when (isDret) {
@@ -1009,8 +1039,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.pie.m := true.B
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
-      // Zicfilp: Restore ELP from MPELP
-      if (XLEN == 64) { elp := mstatusOld.mpelp }
+      // Zicfilp: ELP restoration moved to writeback→ROB→commit path
+      // elpWriteback signal carries mpelp to ROB for elp_after update
       mstatus := mstatusNew.asUInt
     }.elsewhen(isSret && !illegalSret && !illegalSModeSret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -1019,8 +1049,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       privilegeMode := Cat(0.U(1.W), mstatusOld.spp)
       mstatusNew.pie.s := true.B
       mstatusNew.spp := ModeU
-      // Zicfilp: Restore ELP from SPELP
-      elp := mstatusOld.spelp
+      // Zicfilp: ELP restoration moved to writeback→ROB→commit path
+      // elpWriteback signal carries spelp to ROB for elp_after update
       mstatus := mstatusNew.asUInt
       when (mstatusOld.spp =/= ModeM) { mstatusNew.mprv := 0.U }
     }.elsewhen(isUret) {
@@ -1287,6 +1317,25 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     isXRetFlag := true.B
   }
   csrio.isXRet := isXRetFlag
+
+  // Zicfilp: Output LPE enable status to ROB (combinational, always valid)
+  csrio.lpEnabled := zicfilpLpEnabled()
+
+  // Zicfilp: Sync ELP to ROB after CSR directly modifies elp (exception clear or xRET restore)
+  // Use RegNext to ensure ELP register update completes before sync
+  // Exception: T2: hasExceptionIntr=true, elp:=false.B
+  //            T3: RegNext(hasExceptionIntr)=true, elpSync sent with false.B
+  // xRET: T2: isXRet=true (in new scheme, xRET doesn't directly modify elp)
+  //       But we still need elpSync for safety after commit updates elp
+  val isExceptionDelayed = RegNext(hasExceptionIntr)
+  csrio.elpSync.valid := isExceptionDelayed
+  csrio.elpSync.bits := elp
+
+  // Zicfilp: Accept ELP updates from ROB at commit
+  // Only update when LPE is enabled to maintain correct state
+  when (csrio.elpUpdate.valid && zicfilpLpEnabled()) {
+    elp := csrio.elpUpdate.bits
+  }
   private val retTargetReg = RegEnable(retTarget, isXRet && !illegalRetTarget)
   private val illegalXret = RegEnable(illegalMret || illegalSret || illegalSModeSret, isXRet)
 
@@ -1505,6 +1554,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     difftest.io.upkru := upkru
     difftest.io.spkrs := spkrs
     difftest.io.spkctl := spkctl
+    // Zicfilp: Connect LPE-related CSRs to difftest
+    difftest.io.menvcfg := menvcfg
+    difftest.io.senvcfg := senvcfg
+    difftest.io.mseccfg := mseccfg
   }
 
   if(env.AlwaysBasicDiff || env.EnableDifftest) {
