@@ -149,8 +149,8 @@ package object xiangshan {
   }
 
   object ExceptionVec {
-    // 16 RV exception + 2 Dasics exception
-    def apply() = Vec(16 + 2, Bool())
+    // 16 RV exception + 1 Zicfilp exception + 2 Dasics exception
+    def apply() = Vec(16 + 1 + 2, Bool())
   }
 
   object PMAMode {
@@ -536,6 +536,9 @@ object JumpOpType {
     def storePageFault      = 15
 
     //exception 16-23 is reserve
+    // Zicfilp Software Check Exception (CFI)
+    def softwareCheckFault  = 18
+
     def DasicsExcOffset = 8
     //  Dasics excetption       number    offset
     def dasicsUCheckFault = 24 - DasicsExcOffset
@@ -568,6 +571,7 @@ object JumpOpType {
       loadPageFault,
       storeAccessFault,
       loadAccessFault,
+      softwareCheckFault,  // Zicfilp CFI violation
       dasicsSCheckFault,
       dasicsUCheckFault
     )
@@ -584,7 +588,8 @@ object JumpOpType {
       storePageFault,
       loadPageFault,
       storeAccessFault,
-      loadAccessFault
+      loadAccessFault,
+      softwareCheckFault  // Zicfilp CFI violation
     )
     def all = prioritiesAll.distinct.sorted
     def frontendSet = Seq(
@@ -592,6 +597,7 @@ object JumpOpType {
       instrAccessFault,
       illegalInstr,
       instrPageFault,
+      softwareCheckFault,  // Zicfilp CFI can be detected in frontend
       dasicsSCheckFault,
       dasicsUCheckFault
     )

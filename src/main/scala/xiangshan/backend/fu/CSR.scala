@@ -1140,6 +1140,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val hasStoreAccessFault   = hasException && exceptionVecFromRob(storeAccessFault)
   val hasBreakPoint         = hasException && exceptionVecFromRob(breakPoint)
 
+  // Zicfilp Software Check Exception
+  val hasSoftwareCheckFault = hasException && exceptionVecFromRob(softwareCheckFault)
+
   val hasDasicsUCheckFault  = HasDasics.B && hasException && exceptionVecFromRob(dasicsUCheckFault)
   val hasDasicsULoadFault   = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.LoadDasicsFault
   val hasDasicsUStoreFault  = hasDasicsUCheckFault && dasicsFaultReasonFromRob === DasicsFaultReason.StoreDasicsFault
@@ -1226,20 +1229,26 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     hasDasicsUStoreFault,
     hasDasicsSJumpFault,
     hasDasicsUJumpFault,
+    hasSoftwareCheckFault,  // Zicfilp CFI violation
   )).asUInt.orR
   when (RegNext(RegNext(updateTval))) {
     val tval = Mux(
-      RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
-      // for dasics fetch faults, epc is the last branch, tval is this instr
-      RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
+      RegNext(RegNext(hasSoftwareCheckFault)),
+      // Zicfilp: tval = 2 for landing pad fault (per RISC-V Zicfilp spec)
+      2.U(XLEN.W),
       Mux(
-        RegNext(RegNext(hasInstrPageFault || hasInstrAccessFault)),
-        RegNext(RegNext(Mux(
-          csrio.exception.bits.uop.cf.crossPageIPFFix,
-          SignExt(csrio.exception.bits.uop.cf.pc + 2.U, XLEN),
-          iexceptionPC
-        ))),
-        memExceptionAddr
+        RegNext(RegNext((hasDasicsUJumpFault || hasDasicsSJumpFault) && csrio.exception.bits.uop.cf.lastBranch.valid)),
+        // for dasics fetch faults, epc is the last branch, tval is this instr
+        RegNext(RegNext(csrio.exception.bits.uop.cf.pc)),
+        Mux(
+          RegNext(RegNext(hasInstrPageFault || hasInstrAccessFault)),
+          RegNext(RegNext(Mux(
+            csrio.exception.bits.uop.cf.crossPageIPFFix,
+            SignExt(csrio.exception.bits.uop.cf.pc + 2.U, XLEN),
+            iexceptionPC
+          ))),
+          memExceptionAddr
+        )
       )
     )
     when (RegNext(privilegeMode === ModeM)) {
