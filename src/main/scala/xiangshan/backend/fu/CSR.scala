@@ -347,6 +347,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val mseccfg = RegInit(UInt(XLEN.W), 0.U)
   val mseccfgMask = "h400".U(XLEN.W)  // bit 10: MLPE
 
+  // Zicfilp ELP (Expected Landing Pad) state register
+  // This tracks whether the next instruction should be a landing pad
+  val elp = RegInit(Bool(), false.B)
+
   // Hart Priviledge Mode
   val privilegeMode = RegInit(UInt(2.W), ModeM)
 
@@ -1005,6 +1009,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.pie.m := true.B
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
+      // Zicfilp: Restore ELP from MPELP
+      if (XLEN == 64) { elp := mstatusOld.mpelp }
       mstatus := mstatusNew.asUInt
     }.elsewhen(isSret && !illegalSret && !illegalSModeSret) {
       val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
@@ -1013,6 +1019,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       privilegeMode := Cat(0.U(1.W), mstatusOld.spp)
       mstatusNew.pie.s := true.B
       mstatusNew.spp := ModeU
+      // Zicfilp: Restore ELP from SPELP
+      elp := mstatusOld.spelp
       mstatus := mstatusNew.asUInt
       when (mstatusOld.spp =/= ModeM) { mstatusNew.mprv := 0.U }
     }.elsewhen(isUret) {
@@ -1341,6 +1349,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.ie.u := false.B
       privilegeMode := ModeU
       when (clearTval) { utval := 0.U }
+      // Zicfilp: Clear ELP on trap to U-mode (UPELP not yet implemented)
+      elp := false.B
     }.elsewhen (delegS && !delegU) {
       scause := causeNO
       sepc := Mux(
@@ -1351,6 +1361,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.spp := privilegeMode
       mstatusNew.pie.s := mstatusOld.ie.s
       mstatusNew.ie.s := false.B
+      // Zicfilp: Save current ELP to SPELP and clear ELP
+      mstatusNew.spelp := elp
+      elp := false.B
       privilegeMode := ModeS
       when (clearTval) { stval := 0.U }
     }.otherwise {
@@ -1363,6 +1376,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       mstatusNew.mpp := privilegeMode
       mstatusNew.pie.m := mstatusOld.ie.m
       mstatusNew.ie.m := false.B
+      // Zicfilp: Save current ELP to MPELP and clear ELP
+      if (XLEN == 64) { mstatusNew.mpelp := elp }
+      elp := false.B
       privilegeMode := ModeM
       when (clearTval) { mtval := 0.U }
     }
