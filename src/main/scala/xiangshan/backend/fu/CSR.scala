@@ -715,7 +715,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     //--- Machine Trap Setup ---
     MaskedRegMap(Mstatus, mstatus, mstatusWMask, mstatusUpdateSideEffect, mstatusMask),
     MaskedRegMap(Misa, misa, 0.U, MaskedRegMap.Unwritable), // now whole misa is unchangeable
-    MaskedRegMap(Medeleg, medeleg, "h300b3ff".U(XLEN.W)),
+    // Zicfilp: Add bit 18 (softwareCheckFault) to medeleg mask for CFI exception delegation
+    MaskedRegMap(Medeleg, medeleg, "h304b3ff".U(XLEN.W)),
     MaskedRegMap(Mideleg, mideleg, "h333".U(XLEN.W)),
     MaskedRegMap(Mie, mie, "hbbb".U(XLEN.W)),
     MaskedRegMap(Mtvec, mtvec, mtvecMask, MaskedRegMap.NoSideEffect, mtvecMask),

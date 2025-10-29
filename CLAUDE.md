@@ -198,3 +198,4 @@ The processor is tested using DiffTest, which compares execution against NEMU (a
 - 使用中文和我交互
 - zicfilp功能和dasics功能是相互独立的功能，架构设计可以参考，但是功能不要相互耦合
 - 代码注释请使用英文
+- 如果添加了新的端口，一定要检查模块与模块之间的端口是否已经在上层模块成功连接
