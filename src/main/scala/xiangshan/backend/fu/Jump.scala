@@ -87,6 +87,29 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   jumpDataModule.io.func := func
   jumpDataModule.io.isRVC := isRVC
 
+  // ========== LPAD Label Checking (Zicfilp CFI) ==========
+  // For LPAD instruction: check if x7[31:12] matches instruction[31:12]
+  // Reference: NEMU exec.h - "if (label != 0) verify x7[31:12] == label"
+  // Per Zicfilp spec: when label=0, no label checking is required
+  val isLpad = uop.ctrl.isLpad
+  val instrLabel = uop.cf.instr(31, 12)  // Extract 20-bit label from instruction[31:12]
+  val x7Label = src1(31, 12)             // Extract upper 20 bits from x7 register
+
+  // Label checking logic: only check when label != 0
+  // checkResult = (label == 0) || (x7[31:12] == label)
+  val labelIsZero = (instrLabel === 0.U)
+  val labelMatch = (x7Label === instrLabel)
+  val checkResult = labelIsZero || labelMatch  // Pass if label==0 OR labels match
+
+  // Write back label check result to CtrlSignals
+  when (isLpad) {
+    io.out.bits.uop.ctrl.elpLabelOk := checkResult
+  }
+
+  XSDebug(isLpad && valid, "LPAD check: label=0x%x, x7[31:12]=0x%x, match=%d\n",
+    instrLabel, x7Label, checkResult)
+  // =======================================================
+
   redirectOutValid := valid && !jumpDataModule.io.isAuipc
   redirectOut := DontCare
   redirectOut.level := RedirectLevel.flushAfter
