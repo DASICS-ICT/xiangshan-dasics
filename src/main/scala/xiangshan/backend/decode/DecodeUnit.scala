@@ -24,6 +24,7 @@ import freechips.rocketchip.util.uintToBitPat
 import utils._
 import xiangshan.ExceptionNO.illegalInstr
 import xiangshan._
+import xiangshan.backend.fu.ElpOpType
 import freechips.rocketchip.rocket.Instructions._
 
 /**
@@ -657,6 +658,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   // LPAD special handling: read x7 register for label checking
   when (isLpad) {
     cs.lsrc(0) := 7.U(5.W)  // Force lsrc(0) to x7
+    cs.elpOp := ElpOpType.clear  // LPAD会清除ELP
   }
 
   // set RD=ra (0x1) for DasicsCall.J
@@ -697,6 +699,16 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   // LPAD special handling: change srcType to read register instead of PC
   when (isLpad) {
     cs.srcType(0) := SrcType.reg  // Change from SrcType.pc to SrcType.reg
+  }
+
+  // JALR ELP handling: set ELP if rs1 not in {x1, x5, x7}
+  // 根据Zicfilp规范，只有当rs1不是x1(ra)、x5(t0)、x7(t2)时才设置ELP
+  val isJalr = (cs.fuType === FuType.jmp) && (cs.fuOpType === JumpOpType.jalr)
+  val rs1 = ctrl_flow.instr(19, 15)  // rs1 field位于指令的[19:15]位
+  val shouldSetElp = isJalr && (rs1 =/= 1.U) && (rs1 =/= 5.U) && (rs1 =/= 7.U)
+
+  when (shouldSetElp) {
+    cs.elpOp := ElpOpType.set  // JALR with specific rs1 sets ELP
   }
 
   cf_ctrl.ctrl := cs

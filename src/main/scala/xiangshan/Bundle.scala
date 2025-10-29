@@ -44,6 +44,7 @@ import xiangshan.frontend.AllFoldedHistories
 import xiangshan.frontend.AllAheadFoldedHistoryOldestBits
 import xiangshan.backend.fu.DasicsFaultReason
 import xiangshan.backend.fu.DasicsConst
+import xiangshan.backend.fu.ElpOpType
 import xiangshan.backend.fu.util.HasCSRConst
 
 class ValidUndirectioned[T <: Data](gen: T) extends Bundle {
@@ -180,6 +181,10 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   val replayInst = Bool()
   val isLpad = Bool()  // Landing pad instruction for Zicfilp CFI
 
+  // Zicfilp ELP相关字段
+  val elpOp = UInt(2.W)      // ELP操作类型（none/set/clear）
+  val elpLabelOk = Bool()    // LPAD的label检查结果（Execute阶段填充）
+
   private def allSignals = srcType ++ Seq(fuType, fuOpType, rfWen, fpWen,
     isXSTrap, noSpecExec, blockBackward, flushPipe, selImm)
 
@@ -187,6 +192,9 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
     val decoder = freechips.rocketchip.rocket.DecodeLogic(inst, XDecode.decodeDefault, table)
     allSignals zip decoder foreach { case (s, d) => s := d }
     commitType := DontCare
+    // Zicfilp字段默认值
+    elpOp := ElpOpType.none
+    elpLabelOk := true.B
     this
   }
 

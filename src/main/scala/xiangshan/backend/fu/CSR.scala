@@ -142,7 +142,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   class MstatusStruct extends Bundle {
     val sd = Output(UInt(1.W))
 
-    val pad1 = if (XLEN == 64) Output(UInt(22.W)) else null  // bits 62-42
+    val pad1 = if (XLEN == 64) Output(UInt(21.W)) else null  // bits 62-42
     val mpelp = if (XLEN == 64) Output(UInt(1.W)) else null  // bit 41: M-mode Previous Expected Landing Pad
     val pad2 = if (XLEN == 64) Output(UInt(3.W)) else null   // bits 40-38
     val mbe  = if (XLEN == 64) Output(UInt(1.W)) else null
@@ -1177,7 +1177,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     p"backend hit vec ${Binary(csrio.exception.bits.uop.cf.trigger.backendHit.asUInt)}\n")
 
   val hasExceptionVec = csrio.exception.bits.uop.cf.exceptionVec
-  val regularExceptionVec = hasExceptionVec.take(16)
+  // regularExceptionVec包含标准RISC-V异常(0-15)和Zicfilp异常(18)，排除DASICS异常(16-17)
+  val regularExceptionVec = VecInit(hasExceptionVec.zipWithIndex.map {
+    case (bit, i) => if (i == 16 || i == 17) false.B else bit
+  })
   val dasicsExceptionVec = ExceptionNO.selectDasics(hasExceptionVec)
   val regularExceptionNO = ExceptionNO.prioritiesRegular.foldRight(0.U)((i: Int, sum: UInt) => Mux(regularExceptionVec(i), i.U, sum))
   val dasicsExceptionNo = ExceptionNO.dasicsSet.foldRight(0.U)((i: Int, sum: UInt) => Mux(dasicsExceptionVec(i), (i + DasicsExcOffset).U, sum))
