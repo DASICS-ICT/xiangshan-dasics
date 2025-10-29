@@ -636,6 +636,13 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   val isMove = BitPat("b000000000000_?????_000_?????_0010011") === ctrl_flow.instr
   cs.isMove := isMove && ctrl_flow.instr(RD_MSB, RD_LSB) =/= 0.U && !io.csrCtrl.singlestep && io.csrCtrl.move_elim_enable
 
+  // LPAD detection: LPAD is encoded as AUIPC with rd=0
+  // Used to identify landing pad instructions for CFI (Control Flow Integrity)
+  val isLpad = (cs.fuType === FuType.jmp) &&
+               (cs.fuOpType === JumpOpType.auipc) &&
+               (ctrl_flow.instr(RD_MSB, RD_LSB) === 0.U)
+  cs.isLpad := isLpad
+
   // dasics decode check
   val dasicsEn = io.csrCtrl.dasics_enable
   val illegalDasics = ((ctrl_flow.instr === DASICSCALL_JR || ctrl_flow.instr === DASICSCALL_J) && (!dasicsEn || ctrl_flow.dasicsUntrusted)) // no dasicscall when dasics not enable / in untrusted zone 
@@ -646,6 +653,11 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
   cs.lsrc(2) := ctrl_flow.instr(RS3_MSB, RS3_LSB)
   // read dest location
   cs.ldest := ctrl_flow.instr(RD_MSB, RD_LSB)
+
+  // LPAD special handling: read x7 register for label checking
+  when (isLpad) {
+    cs.lsrc(0) := 7.U(5.W)  // Force lsrc(0) to x7
+  }
 
   // set RD=ra (0x1) for DasicsCall.J
   val isDasicsCallJ = cs.fuType === FuType.jmp && cs.fuOpType === JumpOpType.dasicscall_j
@@ -681,6 +693,11 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
       x._1 -> minBits
     }
   ))
+
+  // LPAD special handling: change srcType to read register instead of PC
+  when (isLpad) {
+    cs.srcType(0) := SrcType.reg  // Change from SrcType.pc to SrcType.reg
+  }
 
   cf_ctrl.ctrl := cs
 
