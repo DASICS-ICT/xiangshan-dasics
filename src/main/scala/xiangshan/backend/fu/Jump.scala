@@ -101,11 +101,6 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   val labelMatch = (x7Label === instrLabel)
   val checkResult = labelIsZero || labelMatch  // Pass if label==0 OR labels match
 
-  // Write back label check result to CtrlSignals
-  when (isLpad) {
-    io.out.bits.uop.ctrl.elpLabelOk := checkResult
-  }
-
   XSDebug(isLpad && valid, "LPAD check: label=0x%x, x7[31:12]=0x%x, match=%d\n",
     instrLabel, x7Label, checkResult)
   // =======================================================
@@ -125,6 +120,12 @@ class Jump(implicit p: Parameters) extends FUWithRedirect {
   io.out.valid := valid
   io.out.bits.uop <> io.in.bits.uop
   io.out.bits.data := jumpDataModule.io.result
+
+  // Write back label check result to CtrlSignals
+  // IMPORTANT: Must be AFTER the uop <> connection to avoid being overwritten
+  when (isLpad) {
+    io.out.bits.uop.ctrl.elpLabelOk := checkResult
+  }
 
 
   // NOTE: the debug info is for one-cycle exec, if FMV needs multi-cycle, may needs change it
