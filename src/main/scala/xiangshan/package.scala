@@ -677,7 +677,7 @@ object JumpOpType {
     writeIntRf = true,
     writeFpRf = false,
     hasRedirect = true,
-    exceptionOut = Seq(illegalInstr, dasicsUCheckFault, dasicsSCheckFault)
+    exceptionOut = Seq(illegalInstr, softwareCheckFault, dasicsUCheckFault, dasicsSCheckFault)
   )
 
   val fenceCfg = FuConfig(

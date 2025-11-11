@@ -876,8 +876,14 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // writeback logic set numWbPorts writebacked to true
   for ((wb, cfgs) <- exuWriteback.zip(wbExuConfigs(exeWbSel))) {
     when (wb.valid) {
-      val wbIdx = wb.bits.uop.robIdx.value
-      val wbHasException = ExceptionNO.selectByExu(wb.bits.uop.cf.exceptionVec, cfgs).asUInt.orR
+      val wbUop = wb.bits.uop
+      val wbIdx = wbUop.robIdx.value
+      
+      // Zicfilp: CFI Type 2 violation - LPAD with ELP=1 but label mismatch
+      // Check immediately at writeback, no need to store elpLabelOk
+      val zicfilpType2 = lpEnabled && wbUop.ctrl.isLpad && elp_before(wbIdx) && !wbUop.ctrl.elpLabelOk
+
+      val wbHasException = ExceptionNO.selectByExu(wb.bits.uop.cf.exceptionVec, cfgs).asUInt.orR || zicfilpType2
       val wbHasTriggerCanFire = if (cfgs.exists(_.trigger)) wb.bits.uop.cf.trigger.getBackendCanFire else false.B
       val wbHasFlushPipe = cfgs.exists(_.flushPipe).B && wb.bits.uop.ctrl.flushPipe
       val wbHasReplayInst = cfgs.exists(_.replayInst).B && wb.bits.uop.ctrl.replayInst
