@@ -120,11 +120,11 @@ class Rename(implicit p: Parameters) extends XSModule
     uops(i).cf := io.in(i).bits.cf
     uops(i).ctrl := io.in(i).bits.ctrl
     uops(i).dasicsUntrusted := io.in(i).bits.cf.dasicsUntrusted
-    uops(i).implicitWaitSrc := false.B
-    io.out(i).bits.implicitWaitSrc := uops(i).implicitWaitSrc
-    uops(i).implicitWaitSink := false.B
+    uops(i).implicitWaitSrcM := false.B
+    io.out(i).bits.implicitWaitSrcM := uops(i).implicitWaitSrcM
+    uops(i).implicitWaitSinkM := false.B
     uops(i).ipwNeedWait := false.B
-    io.out(i).bits.implicitWaitSink := uops(i).implicitWaitSink
+    io.out(i).bits.implicitWaitSinkM := uops(i).implicitWaitSinkM
 
     // update cf according to ssit result
     uops(i).cf.storeSetHit := io.ssit(i).valid
@@ -202,7 +202,7 @@ class Rename(implicit p: Parameters) extends XSModule
     when(isDasicsMetaSet(i)){
       io.out(i).bits.ctrl.blockBackward := false.B
       io.out(i).bits.ctrl.noSpecExec    := false.B
-      io.out(i).bits.implicitWaitSrc    := true.B
+      io.out(i).bits.implicitWaitSrcM    := true.B
     }
 
     //Translator for load/store
@@ -211,7 +211,7 @@ class Rename(implicit p: Parameters) extends XSModule
     val isTargetStore = ((uops(i).cf.dasicsUntrusted &&  uops(i).cf.mode === ModeU) || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
 
     when(isTargetLoad || isTargetStore){
-      io.out(i).bits.implicitWaitSink := true.B
+      io.out(i).bits.implicitWaitSinkM := true.B
     }
 
     // Dasics Meta Set Batch prologue instructions

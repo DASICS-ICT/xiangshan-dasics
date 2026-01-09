@@ -25,9 +25,20 @@ import xiangshan._
 import xiangshan.frontend.icache._
 import xiangshan.backend.decode.isa.predecode.PreDecodeInst
 import xiangshan.backend.fu.util.SdtrigExt
+import xiangshan.backend.fu.util.HasCSRConst
 
-trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst{
+trait HasPdConst extends HasXSParameter with HasICacheParameters with HasIFUConst with HasCSRConst{
   def isRVC(inst: UInt) = (inst(1,0) =/= 3.U)
+  //e.g 100010101000_01011_001_00000_1110011
+  //e.g 100010101001_01100_001_00000_1110011
+  def isCSRW(inst: UInt) = (inst(6,0) === "b1110011".U) && (inst(14,12) === "b001".U || inst(14,12) === "b101".U)
+  def isDASICSJumpPSI(inst: UInt) = {
+    val addr = inst(31,20)
+    val isJumpPerm = (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
+      addr === DasicsReturnPc.U ||
+      addr === DasicsMainCall.U
+    isJumpPerm && isCSRW(inst)
+  }
   def isLink(reg:UInt) = reg === 1.U || reg === 5.U
   def brInfo(instr: UInt) = {
     val brType::Nil = ListLookup(instr, List(BrType.notCFI), PreDecodeInst.brTable)
@@ -72,6 +83,7 @@ class PreDecodeInfo extends Bundle {  // 8 bit
   val brType  = UInt(2.W)
   val isCall  = Bool()
   val isRet   = Bool()
+  val isJPSI  = Bool()
   //val excType = UInt(3.W)
   def isBr    = brType === BrType.branch
   def isJal   = brType === BrType.jal
@@ -111,6 +123,7 @@ class PreDecode(implicit p: Parameters) extends XSModule with HasPdConst{
     //expander.io.in             := inst
 
     val brType::isCall::isRet::Nil = brInfo(inst)
+    val isJPSI = isDASICSJumpPSI(inst)
     val jalOffset = jal_offset(inst, currentIsRVC)
     val brOffset  = br_offset(inst, currentIsRVC)
 
@@ -135,10 +148,14 @@ class PreDecode(implicit p: Parameters) extends XSModule with HasPdConst{
     io.out.pd(i).brType        := brType
     io.out.pd(i).isCall        := isCall
     io.out.pd(i).isRet         := isRet
+    io.out.pd(i).isJPSI        := isJPSI
 
     //io.out.expInstr(i)         := expander.io.out.bits
     io.out.instr(i)              :=inst
     io.out.jumpOffset(i)       := Mux(io.out.pd(i).isBr, brOffset, jalOffset)
+    when(isJPSI){
+      printf("[JumpPSI] pc:0x%x instr:0x%x\n", currentPC, inst)
+    }
   }
 
 //  io.out.hasLastHalf := !io.out.pd(PredictWidth - 1).isRVC && io.out.pd(PredictWidth - 1).valid

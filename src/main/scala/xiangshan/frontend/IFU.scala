@@ -136,6 +136,11 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   io.iTLBInter.resp.ready := true.B
 
+
+  //LightSerial Frontend stall
+  val inflightJumpPSICnt = RegInit(0.U(64.W))
+  val hasInflightJumpPSI = inflightJumpPSICnt.asUInt > 0.U 
+
   /**
     ******************************************************************************
     * IFU Stage 0
@@ -166,7 +171,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   val f1_ready, f2_ready, f3_ready         = WireInit(false.B)
 
-  fromFtq.req.ready := f1_ready && io.icacheInter.icacheReady
+  fromFtq.req.ready := f1_ready && io.icacheInter.icacheReady && !hasInflightJumpPSI
 
   /** <PERF> f0 fetch bubble */
 
@@ -412,6 +417,75 @@ class NewIFU(implicit p: Parameters) extends XSModule
     assert(f3_ftq_req.startAddr + 32.U >= f3_ftq_req.nextStartAddr , "More tha 32 Bytes fetch is not allowed!")
   }
 
+  /*** LightSerial Jump ***/
+  val toIbufferJumpPSIVec = VecInit((0 until PredictWidth).map( i => f3_pd(i).isJPSI && io.toIbuffer.bits.valid(i) ))
+  val toIbufferHasJumpPSI = toIbufferJumpPSIVec.asUInt.orR
+  val recorded_ftq_idx = Reg(new FtqPtr)
+  val recorded_ftq_offset = Reg(UInt(log2Ceil(PredictWidth).W))
+  val isBeforIdxFlush = isBefore(fromFtq.redirect.bits.ftqIdx, recorded_ftq_idx) ||
+    (fromFtq.redirect.bits.ftqIdx.asUInt === recorded_ftq_idx.asUInt && fromFtq.redirect.bits.ftqOffset < recorded_ftq_offset.asUInt)
+  val jump_psi_commit_vec = VecInit(io.rob_commits.map{commit => commit.valid && commit.bits.implicitWaitSinkJ})
+  val commit_has_jump_psi = jump_psi_commit_vec.asUInt.orR
+
+  val flushCondition    = backend_redirect && isBeforIdxFlush && f3_dasics_mode === ModeU && inflightJumpPSICnt > 0.U
+  val commitCondition   = commit_has_jump_psi && f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
+  val increaseCondition = f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
+  
+  //flush counter
+  when(flushCondition){
+    recorded_ftq_idx := 0.U.asTypeOf(recorded_ftq_idx)
+    recorded_ftq_offset := 0.U
+    inflightJumpPSICnt := 0.U
+    printf("[LightSerial Jump] [backend redirect]  fromFtq.redirect.bits.ftqIdx:0x%x fromFtq.redirect.bits.ftqOffset:0x%x\n", fromFtq.redirect.bits.ftqIdx.asUInt, fromFtq.redirect.bits.ftqOffset.asUInt)
+    printf("[LightSerial Jump] [backend redirect]  recorded_ftq_idx:0x%x recorded_ftq_offset:0x%x\n", recorded_ftq_idx.asUInt, recorded_ftq_offset.asUInt)
+    printf("[LightSerial Jump] [backend redirect]  isBeforIdxFlush:0x%x\n", isBeforIdxFlush.asUInt)
+  }
+
+  //both commit and has jump psi
+  when(commitCondition && increaseCondition && !flushCondition){
+    inflightJumpPSICnt := inflightJumpPSICnt - PopCount(jump_psi_commit_vec) + PopCount(toIbufferJumpPSIVec)
+    recorded_ftq_idx := f3_ftq_req.ftqIdx
+    //recorded_ftq_offset记录最后一个JPSI的offset
+    recorded_ftq_offset := PriorityEncoder(toIbufferJumpPSIVec.reverse)
+    inflightJumpPSICnt := inflightJumpPSICnt + PopCount(toIbufferJumpPSIVec)
+    printf("[LightSerial Jump](c,i,!f) recorded_ftq_idx:0x%x recorded_ftq_offset:0x%x\n", recorded_ftq_idx.asUInt, recorded_ftq_offset.asUInt)
+  }
+
+  //jump PSI commit
+  when(commitCondition && !increaseCondition && !flushCondition){
+    inflightJumpPSICnt := inflightJumpPSICnt - PopCount(jump_psi_commit_vec)
+    printf("[LightSerial Jump](c,!i,!f) commit_has_jump_psi:0x%x\n", commit_has_jump_psi.asUInt)
+  }
+
+  when(!commitCondition && increaseCondition && !flushCondition){
+    recorded_ftq_idx := f3_ftq_req.ftqIdx
+    //recorded_ftq_offset记录最后一个JPSI的offset
+    recorded_ftq_offset := PriorityEncoder(toIbufferJumpPSIVec.reverse)
+    inflightJumpPSICnt := inflightJumpPSICnt + PopCount(toIbufferJumpPSIVec)
+    printf("[LightSerial Jump](!c,i,!f) recorded_ftq_idx:0x%x recorded_ftq_offset:0x%x\n", recorded_ftq_idx.asUInt, recorded_ftq_offset.asUInt)
+  }
+
+  assert(inflightJumpPSICnt >= 0.U, "inflightJumpPSICnt is negative")
+  assert(commitCondition && increaseCondition && flushCondition)
+
+  //frontend flush
+  val jumpPSIFlushWb = Wire(Valid(new PredecodeWritebackBundle))
+  val f3_jumpPSI_missOffset = Wire(ValidUndirectioned(UInt(log2Ceil(PredictWidth).W)))
+  f3_jumpPSI_missOffset.valid := f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
+  f3_jumpPSI_missOffset.bits  := 0.U
+
+  jumpPSIFlushWb.valid           := f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
+  jumpPSIFlushWb.bits.pc         := f3_pc
+  jumpPSIFlushWb.bits.pd         := f3_pd
+  jumpPSIFlushWb.bits.pd.zipWithIndex.map{case(instr,i) => instr.valid :=  f3_expd_instr(i)}
+  jumpPSIFlushWb.bits.ftqIdx     := f3_ftq_req.ftqIdx
+  jumpPSIFlushWb.bits.ftqOffset  := f3_ftq_req.ftqOffset.bits
+  jumpPSIFlushWb.bits.misOffset  := f3_jumpPSI_missOffset
+  jumpPSIFlushWb.bits.cfiOffset  := DontCare
+  jumpPSIFlushWb.bits.target     := f3_ftq_req.nextStartAddr
+  jumpPSIFlushWb.bits.jalTarget  := DontCare
+  jumpPSIFlushWb.bits.instrRange := f3_expd_instr
+
   /*** MMIO State Machine***/
   val f3_mmio_data    = Reg(Vec(2, UInt(16.W)))
   val mmio_is_RVC     = RegInit(false.B)
@@ -638,6 +712,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.mode.map{a => a := f3_dasics_mode}
   io.toIbuffer.bits.dasicsBrResp  := f3_dasics_br_resp
   io.toIbuffer.bits.lastBranch := f3_ftq_req.lastBranch.bits
+  io.toIbuffer.bits.jumpPSI     := VecInit(f3_pd.map(inst => inst.isJPSI))
 
   when(f3_lastHalf.valid){
     io.toIbuffer.bits.enqEnable := checkerOutStage1.fixedRange.asUInt & f3_instr_valid.asUInt & f3_lastHalf_mask

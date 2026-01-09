@@ -443,8 +443,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   dispatch.io.toLsDq <> lsDq.io.enq
   dispatch.io.allocPregs <> io.allocPregs
   dispatch.io.singleStep := RegNext(io.csrCtrl.singlestep)
-  dispatch.io.hasInflightIWSrc := rob.io.hasInflightIWSrc
-  dontTouch(dispatch.io.hasInflightIWSrc)
+  dispatch.io.hasInflightMemPSI := rob.io.hasInflightMemPSI
+  dontTouch(dispatch.io.hasInflightMemPSI)
   io.robio.impWaitWakeup := RegNext(rob.io.impWaitWakeup)
 
   intDq.io.redirect <> redirectForExu

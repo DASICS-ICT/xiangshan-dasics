@@ -45,7 +45,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val recv = Output(Vec(RenameWidth, Bool()))
     // enq Rob
     val enqRob = Flipped(new RobEnqIO)
-    val hasInflightIWSrc = Input(Bool())
+    val hasInflightMemPSI = Input(Bool())
     // enq Lsq
     val allocPregs = Vec(RenameWidth, Output(new ResetPregStateReq))
     // to dispatch queue
@@ -142,7 +142,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     }
 
     //[dasics] target wait signal update
-    updatedUop(i).ipwNeedWait := io.hasInflightIWSrc && updatedUop(i).implicitWaitSink
+    updatedUop(i).ipwNeedWait := io.hasInflightMemPSI && updatedUop(i).implicitWaitSinkM
   }
 
   // store set perf count

@@ -288,7 +288,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val robDeqPtr = Output(new RobPtr)
     val csr = new RobCSRIO
     val robFull = Output(Bool())
-    val hasInflightIWSrc = Output(Bool())
+    val hasInflightMemPSI = Output(Bool())
     val impWaitWakeup = Output(Bool())
     val cpu_halt = Output(Bool())
     val wfi_enable = Input(Bool())
@@ -382,7 +382,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val hasBlockBackward = RegInit(false.B)
   val hasNoSpecExec = RegInit(false.B)
   val doingSvinval = RegInit(false.B)
-  val InflightIWSrcCnt  = RegInit(0.U(64.W))
+  val InflightMemPSICnt  = RegInit(0.U(64.W))
   // When blockBackward instruction leaves Rob (commit or walk), hasBlockBackward should be set to false.B
   // To reduce registers usage, for hasBlockBackward cases, we allow enqueue after ROB is empty.
   when (isEmpty) { hasBlockBackward:= false.B }
@@ -412,9 +412,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val canEnqueue = VecInit(io.enq.req.map(_.valid && io.enq.canAccept))
   val timer = GTimer()
 
-  val enqIWSrcNum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.implicitWaitSrc && io.enq.canAccept))
+  val enqIWSrcNum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.implicitWaitSrcM && io.enq.canAccept))
 
-  dontTouch(InflightIWSrcCnt)
+  dontTouch(InflightMemPSICnt)
 
   for (i <- 0 until RenameWidth) {
     // we don't check whether io.redirect is valid here since redirect has higher priority
@@ -606,6 +606,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.commitValid(i) := commit_v(i) && commit_w(i) && !isBlocked
     io.commits.info(i).connectDispatchData(dispatchDataRead(i))
     io.commits.info(i).pc := debug_microOp(deqPtrVec(i).value).cf.pc
+    io.commits.info(i).implicitWaitSinkJ := debug_microOp(deqPtrVec(i).value).cf.jumpPSI
 
     io.commits.walkValid(i) := shouldWalkVec(i)
     when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
@@ -791,7 +792,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until RenameWidth) {
     when (canEnqueue(i) && !io.redirect.valid) {
       valid(allocatePtrVec(i).value) := true.B
-      dsImpWaitSrc(allocatePtrVec(i).value) := io.enq.req(i).bits.implicitWaitSrc
+      dsImpWaitSrc(allocatePtrVec(i).value) := io.enq.req(i).bits.implicitWaitSrcM
     }
   }
   // dequeue/walk logic writes 6 valid, dequeue and walk will not happen at the same time
@@ -807,14 +808,12 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val doCommit = io.commits.commitValid.reduce(_||_) && io.commits.isCommit
   val commitIWSrcNum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_iwsrc(i)))
 
-  when(state === s_walk && walkFinished){
-    //InflightIWSrcCnt := 0.U
-  }.elsewhen(io.enq.canAccept && doCommit){
-    InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum - commitIWSrcNum
+  when(io.enq.canAccept && doCommit){
+    InflightMemPSICnt := InflightMemPSICnt + enqIWSrcNum - commitIWSrcNum
   }.elsewhen(io.enq.canAccept){
-    InflightIWSrcCnt := InflightIWSrcCnt + enqIWSrcNum
+    InflightMemPSICnt := InflightMemPSICnt + enqIWSrcNum
   }.elsewhen(doCommit){
-    InflightIWSrcCnt := InflightIWSrcCnt - commitIWSrcNum
+    InflightMemPSICnt := InflightMemPSICnt - commitIWSrcNum
   }
 
   // status field: writebacked
@@ -961,15 +960,15 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.csr.perfinfo.retiredInstr := retireCounter
   io.robFull := !allowEnqueue
 
-  val hasInflightIWSrc = InflightIWSrcCnt.asUInt > 0.U
-  val hasInflightIWSrcReg = RegNext(hasInflightIWSrc)
-  io.hasInflightIWSrc := hasInflightIWSrc
-  val firstWakeup = !hasInflightIWSrc && hasInflightIWSrcReg
+  val hasInflightMemPSI = InflightMemPSICnt.asUInt > 0.U
+  val hasInflightMemPSIReg = RegNext(hasInflightMemPSI)
+  io.hasInflightMemPSI := hasInflightMemPSI
+  val firstWakeup = !hasInflightMemPSI && hasInflightMemPSIReg
 
   val wakeupCounter = RegInit(0.U(4.W))
   when (wakeupCounter === 0.U || firstWakeup) {
     wakeupCounter := 10.U
-  }.elsewhen(!hasInflightIWSrc) {
+  }.elsewhen(!hasInflightMemPSI) {
     wakeupCounter := wakeupCounter - 1.U
   }
   val timeWakeup = wakeupCounter === 0.U
