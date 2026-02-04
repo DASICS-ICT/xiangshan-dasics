@@ -522,11 +522,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val utvec = RegInit(UInt(XLEN.W), 0.U)
   val utval = RegInit(UInt(XLEN.W), 0.U)
 
+  // next cycle to trigger user external interrupt
   val utimer = RegInit(UInt(XLEN.W), 0.U)
-
-  when (privilegeMode === ModeU && utimer > 1.U){
-    utimer := utimer - 1.U
-  }
 
   // fcsr
   class FcsrStruct extends Bundle {
@@ -1071,7 +1068,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   mipWire.s.m := csrio.externalInterrupt.msip
   mipWire.e.m := csrio.externalInterrupt.meip
   mipWire.e.s := csrio.externalInterrupt.seip
-  mipWire.e.u := csrio.externalInterrupt.ueip | (utimer === 1.U)
+  mipWire.e.u := csrio.externalInterrupt.ueip
+  mipWire.t.u := (mcycle >= utimer)
 
   // interrupts
   val intrNO = IntPriority.foldRight(0.U)((i: Int, sum: UInt) => Mux(intrVec(i), i.U, sum))
