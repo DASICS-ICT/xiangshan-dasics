@@ -79,6 +79,9 @@ trait HasCSRConst {
   // User DASICS registers
   val DasicsLibCfgBase = 0x880
   val DasicsLibBoundBase = 0x890
+  val DasicsUMainCfgUL = 0x8e0
+  val DasicsUMainBoundLoUL = 0x8e2
+  val DasicsUMainBoundHiUL = 0x8e3
 
   val DasicsMainCall  = 0x8b0
   val DasicsReturnPc  = 0x8b1

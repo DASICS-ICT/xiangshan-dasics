@@ -265,7 +265,8 @@ class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with 
 
   val dasics_config_mapping = Map(
     MaskedRegMap(DasicsSMainCfg, dasics_main_cfg, "h3ff".U(XLEN.W)),
-    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h3e".U(XLEN.W))
+    MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h3e".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainCfgUL, dasics_main_cfg, "h3e".U(XLEN.W))
   )
 
   val rdata: UInt = Wire(UInt(XLEN.W))
@@ -373,7 +374,10 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
     MaskedRegMap(DasicsSMainBoundHi, dasics_smain_bound_hi),
     MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h3e".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, dasics_umain_bound_lo),
-    MaskedRegMap(DasicsUMainBoundHi, dasics_umain_bound_hi)
+    MaskedRegMap(DasicsUMainBoundHi, dasics_umain_bound_hi),
+    MaskedRegMap(DasicsUMainCfgUL, dasics_main_cfg, "h3e".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLoUL, dasics_umain_bound_lo),
+    MaskedRegMap(DasicsUMainBoundHiUL, dasics_umain_bound_hi)
   )
 
   val rdata: UInt = Wire(UInt(XLEN.W))
@@ -542,7 +546,10 @@ class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
     MaskedRegMap(DasicsSMainBoundHi, dasics_smain_bound_hi),
     MaskedRegMap(DasicsUMainCfg, dasics_main_cfg, "h3e".U(XLEN.W)),
     MaskedRegMap(DasicsUMainBoundLo, dasics_umain_bound_lo),
-    MaskedRegMap(DasicsUMainBoundHi, dasics_umain_bound_hi)
+    MaskedRegMap(DasicsUMainBoundHi, dasics_umain_bound_hi),
+    MaskedRegMap(DasicsUMainCfgUL, dasics_main_cfg, "h3e".U(XLEN.W)),
+    MaskedRegMap(DasicsUMainBoundLoUL, dasics_umain_bound_lo),
+    MaskedRegMap(DasicsUMainBoundHiUL, dasics_umain_bound_hi)
   )
   val rdata: UInt = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping, w.bits.addr, rdata, w.valid, w.bits.data)
