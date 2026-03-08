@@ -363,6 +363,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(DasicsUMainCfg, dasicsMainCfg, wmask = dasicsUMainCfgMask, rmask = dasicsUMainCfgMask),
     MaskedRegMap(DasicsUMainBoundLo, dasicsUMainBoundLo),
     MaskedRegMap(DasicsUMainBoundHi, dasicsUMainBoundHi),
+    MaskedRegMap(DasicsUMainCfgUL, dasicsMainCfg, wmask = dasicsUMainCfgMask, rmask = dasicsUMainCfgMask),
+    MaskedRegMap(DasicsUMainBoundLoUL, dasicsUMainBoundLo),
+    MaskedRegMap(DasicsUMainBoundHiUL, dasicsUMainBoundHi),
     MaskedRegMap(DasicsMainCall, dasicsMainCallReg),
     MaskedRegMap(DasicsReturnPc, dasicsReturnPcReg),
     MaskedRegMap(DasicsActiveZoneReturnPc, dasicsAZoneReturnPcReg),
@@ -783,8 +786,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     addr === Mip.U
   csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
 
-  // Dasics Config CSRs, need flush pipe
-  val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
+  val addrInDasics =  (addr >= DasicsUMainCfgUL.U) && (addr <= DasicsUMainBoundHiUL.U) ||
+    (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
     (addr >= DasicsMainCall.U) && (addr <= DasicsFReason.U) ||
     (addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) || 
