@@ -144,11 +144,10 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   io.out.bits.uop.cf.exceptionVec(storePageFault) := io.dtlbResp.bits.excp(0).pf.st
   io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.dtlbResp.bits.excp(0).af.st
 
-  when (io.dtlbResp.bits.excp(0).pkf.st) {
-    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dtlbResp.bits.excp(0).pkf.isUser
-    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || !io.dtlbResp.bits.excp(0).pkf.isUser
-    io.out.bits.uop.cf.dasicsFaultReason := Mux(DasicsFaultReason.StoreMPKFault > io.in.bits.uop.cf.dasicsFaultReason, DasicsFaultReason.StoreMPKFault, io.in.bits.uop.cf.dasicsFaultReason)
-  }
+  // Pass MPK check results to S2 for joint check with DASICS (do NOT raise exception here)
+  io.out.bits.pkfLd     := false.B
+  io.out.bits.pkfSt     := io.dtlbResp.bits.excp(0).pkf.st
+  io.out.bits.pkfIsUser := io.dtlbResp.bits.excp(0).pkf.isUser
 
   io.lsq.valid := io.in.valid
   io.lsq.bits := io.out.bits
@@ -189,11 +188,15 @@ class StoreUnit_S2(implicit p: Parameters) extends XSModule with HasCSRConst{
   io.out.bits.uop.cf.exceptionVec(storeAccessFault) := io.in.bits.uop.cf.exceptionVec(storeAccessFault) || pmp.st
   io.out.valid := io.in.valid && (!is_mmio || s2_exception)
 
-  //Dasics store access fault
-  when (io.dasicsResp.dasics_fault > io.in.bits.uop.cf.dasicsFaultReason) { // DasicsFaultReason.StoreDasicsFault
-    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dasicsResp.mode === ModeU
-    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || io.dasicsResp.mode === ModeS
-    io.out.bits.uop.cf.dasicsFaultReason := io.dasicsResp.dasics_fault
+  // Joint check: only raise exception when BOTH MPK and DASICS checks fail
+  val s2_pkf_st      = io.in.bits.pkfSt
+  val s2_pkf_isUser  = io.in.bits.pkfIsUser
+  val s2_dasics_fail = io.dasicsResp.dasics_fault === DasicsFaultReason.StoreDasicsFault
+
+  when (s2_pkf_st && s2_dasics_fail) {
+    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := s2_pkf_isUser
+    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := !s2_pkf_isUser
+    io.out.bits.uop.cf.dasicsFaultReason := DasicsFaultReason.StoreMPKFault
   }
 }
 

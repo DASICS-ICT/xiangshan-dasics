@@ -69,6 +69,11 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle {
   //softprefetch
   val isSoftPrefetch = Bool() 
 
+  // MPK check results, carried from S1 to S2 for joint check with DASICS
+  val pkfLd     = Bool()
+  val pkfSt     = Bool()
+  val pkfIsUser = Bool()
+
   // For debug usage
   val isFirstIssue = Bool()
 }
@@ -93,6 +98,9 @@ class LqWriteBundle(implicit p: Parameters) extends LsPipelineBundle {
     forwardMask := input.forwardMask
     forwardData := input.forwardData
     isSoftPrefetch := input.isSoftPrefetch
+    pkfLd := input.pkfLd
+    pkfSt := input.pkfSt
+    pkfIsUser := input.pkfIsUser
     isFirstIssue := input.isFirstIssue
 
     lq_data_wen_dup := DontCare
