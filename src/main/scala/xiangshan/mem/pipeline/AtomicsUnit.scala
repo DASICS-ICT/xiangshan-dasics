@@ -150,17 +150,11 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
       exceptionVec(storeAccessFault)    := io.dtlb.resp.bits.excp(0).af.st
       exceptionVec(loadAccessFault)     := io.dtlb.resp.bits.excp(0).af.ld
 
-      val PKPFReason = Mux(io.dtlb.resp.bits.excp(0).pkf.st,DasicsFaultReason.StoreMPKFault,DasicsFaultReason.LoadMPKFault)
-      
-      when (io.dtlb.resp.bits.excp(0).pkf.ld || io.dtlb.resp.bits.excp(0).pkf.st) {
-        exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dtlb.resp.bits.excp(0).pkf.isUser
-        exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || !io.dtlb.resp.bits.excp(0).pkf.isUser
-        dasicsFReasonReg := Mux(PKPFReason > io.in.bits.uop.cf.dasicsFaultReason, PKPFReason, io.in.bits.uop.cf.dasicsFaultReason)
-      }
-      // exceptionVec(pkuLoadPageFault)    := io.dtlb.resp.bits.excp(0).pkf.ld &&  io.dtlb.resp.bits.excp(0).pkf.isUser
-      // exceptionVec(pkuStorePageFault)   := io.dtlb.resp.bits.excp(0).pkf.st &&  io.dtlb.resp.bits.excp(0).pkf.isUser
-      // exceptionVec(pksLoadPageFault)    := io.dtlb.resp.bits.excp(0).pkf.ld && !io.dtlb.resp.bits.excp(0).pkf.isUser
-      // exceptionVec(pksStorePageFault)   := io.dtlb.resp.bits.excp(0).pkf.st && !io.dtlb.resp.bits.excp(0).pkf.isUser
+      // MPK check results: saved for future joint check with DASICS
+      // TODO: add DASICS check interface to AtomicsUnit, then perform joint check here
+      val pkfLd     = io.dtlb.resp.bits.excp(0).pkf.ld
+      val pkfSt     = io.dtlb.resp.bits.excp(0).pkf.st
+      val pkfIsUser = io.dtlb.resp.bits.excp(0).pkf.isUser
       static_pm := io.dtlb.resp.bits.static_pm
 
       when (!io.dtlb.resp.bits.miss) {
@@ -189,8 +183,7 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
     is_mmio := pmp.mmio
     // NOTE: only handle load/store exception here, if other exception happens, don't send here
     val exception_va = exceptionVec(storePageFault) || exceptionVec(loadPageFault) ||
-      exceptionVec(storeAccessFault) || exceptionVec(loadAccessFault) ||
-      ((exceptionVec(dasicsUCheckFault) || exceptionVec(dasicsSCheckFault)) && (dasicsFReasonReg === DasicsFaultReason.LoadMPKFault || dasicsFReasonReg === DasicsFaultReason.StoreMPKFault))
+      exceptionVec(storeAccessFault) || exceptionVec(loadAccessFault)
     val exception_pa = pmp.st || pmp.ld
     when (exception_va || exception_pa) {
       state := s_finish

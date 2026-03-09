@@ -254,11 +254,10 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.out.bits.uop.cf.exceptionVec(loadPageFault) := (io.dtlbResp.bits.excp(0).pf.ld || io.in.bits.uop.cf.exceptionVec(loadPageFault))
   io.out.bits.uop.cf.exceptionVec(loadAccessFault) := io.dtlbResp.bits.excp(0).af.ld
   
-  when (io.dtlbResp.bits.excp(0).pkf.ld) {
-    io.out.bits.uop.cf.exceptionVec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dtlbResp.bits.excp(0).pkf.isUser
-    io.out.bits.uop.cf.exceptionVec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || !io.dtlbResp.bits.excp(0).pkf.isUser
-    io.out.bits.uop.cf.dasicsFaultReason := Mux(DasicsFaultReason.LoadMPKFault > io.in.bits.uop.cf.dasicsFaultReason, DasicsFaultReason.LoadMPKFault, io.in.bits.uop.cf.dasicsFaultReason)
-  }
+  // Pass MPK check results to S2 for joint check with DASICS (do NOT raise exception here)
+  io.out.bits.pkfLd     := io.dtlbResp.bits.excp(0).pkf.ld
+  io.out.bits.pkfSt     := false.B
+  io.out.bits.pkfIsUser := io.dtlbResp.bits.excp(0).pkf.isUser
 
   io.out.bits.ptwBack := io.dtlbResp.bits.ptwBack
   io.out.bits.rsIdx := io.in.bits.rsIdx
@@ -324,11 +323,15 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper wi
   }
   val s2_exception = ExceptionNO.selectByFu(s2_exception_vec, lduCfg).asUInt.orR
 
-  //Dasics load access fault  
-  when (io.dasicsResp.dasics_fault > io.in.bits.uop.cf.dasicsFaultReason) { // DasicsFaultReason.LoadDasicsFault
-    s2_exception_vec(dasicsUCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsUCheckFault) || io.dasicsResp.mode === ModeU
-    s2_exception_vec(dasicsSCheckFault) := io.in.bits.uop.cf.exceptionVec(dasicsSCheckFault) || io.dasicsResp.mode === ModeS
-    s2_exception_dfreason := io.dasicsResp.dasics_fault
+  // Joint check: only raise exception when BOTH MPK and DASICS checks fail
+  val s2_pkf_ld      = io.in.bits.pkfLd
+  val s2_pkf_isUser  = io.in.bits.pkfIsUser
+  val s2_dasics_fail = io.dasicsResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
+
+  when (s2_pkf_ld && s2_dasics_fail) {
+    s2_exception_vec(dasicsUCheckFault) := s2_pkf_isUser
+    s2_exception_vec(dasicsSCheckFault) := !s2_pkf_isUser
+    s2_exception_dfreason := DasicsFaultReason.LoadMPKFault
   }
 
   // writeback access fault caused by ecc error / bus error
