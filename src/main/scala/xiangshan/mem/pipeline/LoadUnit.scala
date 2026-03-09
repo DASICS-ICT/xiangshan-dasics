@@ -326,8 +326,8 @@ class LoadUnit_S2(implicit p: Parameters) extends XSModule with HasLoadHelper wi
   // Joint check: only raise exception when BOTH MPK and DASICS checks fail
   val s2_pkf_ld      = io.in.bits.pkfLd
   val s2_pkf_isUser  = io.in.bits.pkfIsUser
-  val s2_dasics_fail = io.dasicsResp.dasics_fault =/= DasicsFaultReason.noDasicsFault
-
+  val s2_dasics_fail = io.dasicsResp.dasics_fault === DasicsFaultReason.LoadDasicsFault
+  
   when (s2_pkf_ld && s2_dasics_fail) {
     s2_exception_vec(dasicsUCheckFault) := s2_pkf_isUser
     s2_exception_vec(dasicsSCheckFault) := !s2_pkf_isUser

@@ -150,11 +150,6 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
       exceptionVec(storeAccessFault)    := io.dtlb.resp.bits.excp(0).af.st
       exceptionVec(loadAccessFault)     := io.dtlb.resp.bits.excp(0).af.ld
 
-      // MPK check results: saved for future joint check with DASICS
-      // TODO: add DASICS check interface to AtomicsUnit, then perform joint check here
-      val pkfLd     = io.dtlb.resp.bits.excp(0).pkf.ld
-      val pkfSt     = io.dtlb.resp.bits.excp(0).pkf.st
-      val pkfIsUser = io.dtlb.resp.bits.excp(0).pkf.isUser
       static_pm := io.dtlb.resp.bits.static_pm
 
       when (!io.dtlb.resp.bits.miss) {
