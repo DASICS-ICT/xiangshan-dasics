@@ -239,8 +239,10 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
-  val implicitWaitSrcM = Bool()   //subsequent checked instructions (SCI), memory
-  val implicitWaitSinkM = Bool()  //permission setting instructions (PSI), memory
+  val lsMemPSI = Bool()   //subsequent checked instructions (SCI), memory
+  val lsMemSCI = Bool()  //permission setting instructions (PSI), memory
+  val lsControFlowSCI = Bool() //subsequent checked instructions (SCI), jump
+  val lsControlFlowPSI = Bool() //permission setting instructions (PSI), jump
   val ipwNeedWait = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
@@ -385,6 +387,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
   // these should be optimized for synthesis verilog
   val pc = UInt(VAddrBits.W)
   val implicitWaitSinkJ = Bool() //permission setting instructions (PSI), jump
+  val controlFlowPSICounter = UInt(XLEN.W)
 
   def connectDispatchData(data: RobDispatchData) {
     ldest := data.ldest

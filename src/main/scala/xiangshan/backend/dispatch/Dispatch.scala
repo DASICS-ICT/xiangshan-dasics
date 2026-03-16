@@ -142,7 +142,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     }
 
     //[dasics] target wait signal update
-    updatedUop(i).ipwNeedWait := io.hasInflightMemPSI && updatedUop(i).implicitWaitSinkM
+    updatedUop(i).ipwNeedWait := io.hasInflightMemPSI && updatedUop(i).lsMemPSI
   }
 
   // store set perf count

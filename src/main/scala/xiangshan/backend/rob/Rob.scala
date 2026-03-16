@@ -324,9 +324,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   // They have side effects on the states of the processor before they write back
   val interrupt_safe = RegInit(VecInit(Seq.fill(RobSize)(true.B)))
 
-  val dsImpWaitSrc = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
+  val dsMemPSI = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
+  val dsControlFlowPSI = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
 
-  dontTouch(dsImpWaitSrc)
+  dontTouch(dsMemPSI)
+  dontTouch(dsControlFlowPSI)
 
   // data for debug
   // Warn: debug_* prefix should not exist in generated verilog.
@@ -383,6 +385,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val hasNoSpecExec = RegInit(false.B)
   val doingSvinval = RegInit(false.B)
   val InflightMemPSICnt  = RegInit(0.U(64.W))
+  val InflightControlFlowPSICnt = RegInit(0.U(64.W))
   // When blockBackward instruction leaves Rob (commit or walk), hasBlockBackward should be set to false.B
   // To reduce registers usage, for hasBlockBackward cases, we allow enqueue after ROB is empty.
   when (isEmpty) { hasBlockBackward:= false.B }
@@ -412,9 +415,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val canEnqueue = VecInit(io.enq.req.map(_.valid && io.enq.canAccept))
   val timer = GTimer()
 
-  val enqIWSrcNum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.implicitWaitSrcM && io.enq.canAccept))
+  val enqMemPSINum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.lsMemPSI && io.enq.canAccept))
+  val enqControlFlowPSINum = PopCount(io.enq.req.map(enqReq => enqReq.valid && enqReq.bits.lsControlFlowPSI && io.enq.canAccept))
 
   dontTouch(InflightMemPSICnt)
+  dontTouch(InflightControlFlowPSICnt)
 
   for (i <- 0 until RenameWidth) {
     // we don't check whether io.redirect is valid here since redirect has higher priority
@@ -596,7 +601,9 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val commit_exception = exceptionDataRead.valid && !isAfter(exceptionDataRead.bits.robIdx, deqPtrVec.last)
   val commit_block = VecInit((0 until CommitWidth).map(i => !commit_w(i)))
   val allowOnlyOneCommit = commit_exception || intrBitSetReg
-  val commit_iwsrc = VecInit(deqPtrVec.map(ptr => dsImpWaitSrc(ptr.value)))
+  val commit_mpsi = VecInit(deqPtrVec.map(ptr => dsMemPSI(ptr.value)))
+  val commit_cfpsi = VecInit(deqPtrVec.map(ptr => dsControlFlowPSI(ptr.value)))
+
 
   // for instructions that may block others, we don't allow them to commit
   for (i <- 0 until CommitWidth) {
@@ -607,6 +614,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     io.commits.info(i).connectDispatchData(dispatchDataRead(i))
     io.commits.info(i).pc := debug_microOp(deqPtrVec(i).value).cf.pc
     io.commits.info(i).implicitWaitSinkJ := debug_microOp(deqPtrVec(i).value).cf.jumpPSI
+    io.commits.info(i).controlFlowPSICounter := InflightControlFlowPSICnt
 
     io.commits.walkValid(i) := shouldWalkVec(i)
     when (io.commits.isWalk && state === s_walk && shouldWalkVec(i)) {
@@ -792,7 +800,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   for (i <- 0 until RenameWidth) {
     when (canEnqueue(i) && !io.redirect.valid) {
       valid(allocatePtrVec(i).value) := true.B
-      dsImpWaitSrc(allocatePtrVec(i).value) := io.enq.req(i).bits.implicitWaitSrcM
+      dsMemPSI(allocatePtrVec(i).value) := io.enq.req(i).bits.lsMemPSI
+      dsControlFlowPSI(allocatePtrVec(i).value) := io.enq.req(i).bits.lsControlFlowPSI
     }
   }
   // dequeue/walk logic writes 6 valid, dequeue and walk will not happen at the same time
@@ -801,19 +810,30 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val walkValid = io.commits.isWalk && io.commits.walkValid(i) && state =/= s_extrawalk
     when (commitValid || walkValid) {
       valid(commitReadAddr(i)) := false.B
-      dsImpWaitSrc(commitReadAddr(i)) := false.B
+      dsMemPSI(commitReadAddr(i)) := false.B
+      dsControlFlowPSI(commitReadAddr(i)) := false.B
     }
   }
 
   val doCommit = io.commits.commitValid.reduce(_||_) && io.commits.isCommit
-  val commitIWSrcNum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_iwsrc(i)))
+
+  val commitMemPSINum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_mpsi(i)))
+  val commitControlFlowPSINum = PopCount((0 until CommitWidth).map(i => io.commits.commitValid(i) && commit_cfpsi(i)))
 
   when(io.enq.canAccept && doCommit){
-    InflightMemPSICnt := InflightMemPSICnt + enqIWSrcNum - commitIWSrcNum
+    InflightMemPSICnt := InflightMemPSICnt + enqMemPSINum - commitMemPSINum
   }.elsewhen(io.enq.canAccept){
-    InflightMemPSICnt := InflightMemPSICnt + enqIWSrcNum
+    InflightMemPSICnt := InflightMemPSICnt + enqMemPSINum
   }.elsewhen(doCommit){
-    InflightMemPSICnt := InflightMemPSICnt - commitIWSrcNum
+    InflightMemPSICnt := InflightMemPSICnt - commitMemPSINum
+  }
+
+  when(io.enq.canAccept && doCommit){
+    InflightControlFlowPSICnt := InflightControlFlowPSICnt + enqControlFlowPSINum - commitControlFlowPSINum
+  }.elsewhen(io.enq.canAccept){
+    InflightControlFlowPSICnt := InflightControlFlowPSICnt + enqControlFlowPSINum
+  }.elsewhen(doCommit){
+    InflightControlFlowPSICnt := InflightControlFlowPSICnt - commitControlFlowPSINum
   }
 
   // status field: writebacked
@@ -960,6 +980,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.csr.perfinfo.retiredInstr := retireCounter
   io.robFull := !allowEnqueue
 
+  //Memory PSI info
   val hasInflightMemPSI = InflightMemPSICnt.asUInt > 0.U
   val hasInflightMemPSIReg = RegNext(hasInflightMemPSI)
   io.hasInflightMemPSI := hasInflightMemPSI
@@ -974,6 +995,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val timeWakeup = wakeupCounter === 0.U
 
   io.impWaitWakeup := !firstWakeup || timeWakeup
+
+
 
   /**
     * debug info

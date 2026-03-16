@@ -524,13 +524,16 @@ class DasicsTagger(implicit p: Parameters) extends XSModule with HasCSRConst {
 
   private val mainCfg = Wire(new DasicsMainCfg())
   mainCfg.gen(dasics_main_cfg)
+
+  val isNexusDebug = io.mode === ModeM && dasics_umain_bound_lo =/= 0.U && dasics_umain_bound_hi =/= 0.U
+
   private val mainBound = Wire(new DasicsMainBound())
   private val boundLo = Mux(io.mode === ModeS,dasics_smain_bound_lo,dasics_umain_bound_lo)
   private val boundHi = Mux(io.mode === ModeS,dasics_smain_bound_hi,dasics_umain_bound_hi)
   mainBound.gen(boundLo, boundHi)
   private val cmpTags = mainBound.getPcTags(io.addr)
   io.notTrusted := Mux(
-    io.mode === ModeU && mainCfg.uEnable || io.mode === ModeS && mainCfg.sEnable,
+    io.mode === ModeU && mainCfg.uEnable || io.mode === ModeS && mainCfg.sEnable || isNexusDebug,
     cmpTags,
     VecInit(Seq.fill(FetchWidth * 2)(false.B))
   )

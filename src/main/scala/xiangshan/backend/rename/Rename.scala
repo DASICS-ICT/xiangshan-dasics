@@ -113,18 +113,23 @@ class Rename(implicit p: Parameters) extends XSModule
 
   val intSpecWen = Wire(Vec(RenameWidth, Bool()))
   val fpSpecWen = Wire(Vec(RenameWidth, Bool()))
-  val isDasicsMetaSet = Wire(Vec(RenameWidth, Bool()))
+  val isDasicsMemPSI = Wire(Vec(RenameWidth, Bool()))
+  val isDasicsControlFlowPSI = Wire(Vec(RenameWidth, Bool()))
 
   // uop calculation
   for (i <- 0 until RenameWidth) {
     uops(i).cf := io.in(i).bits.cf
     uops(i).ctrl := io.in(i).bits.ctrl
     uops(i).dasicsUntrusted := io.in(i).bits.cf.dasicsUntrusted
-    uops(i).implicitWaitSrcM := false.B
-    io.out(i).bits.implicitWaitSrcM := uops(i).implicitWaitSrcM
-    uops(i).implicitWaitSinkM := false.B
+    uops(i).lsMemPSI := false.B
+    uops(i).lsMemSCI := false.B
+    uops(i).lsControlFlowPSI := false.B
+    uops(i).lsControFlowSCI := false.B
+    io.out(i).bits.lsMemPSI := uops(i).lsMemPSI
+    io.out(i).bits.lsMemSCI := uops(i).lsMemSCI
+    io.out(i).bits.lsControFlowSCI := uops(i).lsControFlowSCI
+    io.out(i).bits.lsControlFlowPSI := uops(i).lsControlFlowPSI
     uops(i).ipwNeedWait := false.B
-    io.out(i).bits.implicitWaitSinkM := uops(i).implicitWaitSinkM
 
     // update cf according to ssit result
     uops(i).cf.storeSetHit := io.ssit(i).valid
@@ -192,26 +197,48 @@ class Rename(implicit p: Parameters) extends XSModule
 
     //Translator for dasics write bound csr
     val addr = uops(i).ctrl.imm(11, 0)
-    val addrInDasicsBound = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) ||
-      (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
-      addr === DasicsLibCfgBase.U
+    val addrInDasicsMem = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) || addr === DasicsLibCfgBase.U
+    val addrInDasicsJump = (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U)
+    
+    val isNexusDebug   =  uops(i).cf.mode === ModeM
+
     val isCSRWrite = (uops(i).ctrl.fuOpType === CSROpType.wrt  || uops(i).ctrl.fuOpType === CSROpType.wrti) && uops(i).ctrl.ldest === 0.U
-    isDasicsMetaSet(i) := ((!uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU) || uops(i).cf.mode === ModeS) && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsBound
+    isDasicsMemPSI(i) := ((!uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU) || uops(i).cf.mode === ModeS) && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsMem
+    isDasicsControlFlowPSI(i) := ((!uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU) || uops(i).cf.mode === ModeS || (!uops(i).cf.dasicsUntrusted && isNexusDebug)) && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsJump
 
 
-    when(isDasicsMetaSet(i)){
+    when(isDasicsMemPSI(i)){
       io.out(i).bits.ctrl.blockBackward := false.B
       io.out(i).bits.ctrl.noSpecExec    := false.B
-      io.out(i).bits.implicitWaitSrcM    := true.B
+      io.out(i).bits.lsMemPSI           := true.B
     }
 
-    //Translator for load/store
-    val isNexusDebug = false
-    val isTargetLoad  = ((uops(i).cf.dasicsUntrusted &&  uops(i).cf.mode === ModeU) || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.ldu
-    val isTargetStore = ((uops(i).cf.dasicsUntrusted &&  uops(i).cf.mode === ModeU) || isNexusDebug.B) && uops(i).ctrl.fuType === FuType.stu
+    when(isDasicsControlFlowPSI(i)){
+      io.out(i).bits.ctrl.blockBackward := false.B
+      io.out(i).bits.ctrl.noSpecExec    := false.B
+      io.out(i).bits.lsControlFlowPSI   := true.B
+    }
+
+    //Translator for load/store/jump/branch
+    val isTargetLoad   = uops(i).cf.dasicsUntrusted &&  (uops(i).cf.mode === ModeU || isNexusDebug) && uops(i).ctrl.fuType === FuType.ldu
+    val isTargetStore  = uops(i).cf.dasicsUntrusted &&  (uops(i).cf.mode === ModeU || isNexusDebug) && uops(i).ctrl.fuType === FuType.stu
+    
+    val isBranchIntr = uops(i).ctrl.fuType === FuType.alu && (uops(i).ctrl.fuOpType === ALUOpType.beq 
+                                                          || uops(i).ctrl.fuOpType === ALUOpType.bne 
+                                                          || uops(i).ctrl.fuOpType === ALUOpType.blt 
+                                                          || uops(i).ctrl.fuOpType === ALUOpType.bge 
+                                                          || uops(i).ctrl.fuOpType === ALUOpType.bltu 
+                                                          || uops(i).ctrl.fuOpType === ALUOpType.bgeu)
+    val isJumpIntr   = uops(i).ctrl.fuType === FuType.jmp && (uops(i).ctrl.fuOpType === JumpOpType.jal || uops(i).ctrl.fuOpType === JumpOpType.jalr)
+    val isTargetBranch = uops(i).cf.dasicsUntrusted &&  (uops(i).cf.mode === ModeU || isNexusDebug) && isBranchIntr
+    val isTargetJump   = uops(i).cf.dasicsUntrusted &&  (uops(i).cf.mode === ModeU || isNexusDebug) && isJumpIntr
 
     when(isTargetLoad || isTargetStore){
-      io.out(i).bits.implicitWaitSinkM := true.B
+      io.out(i).bits.lsMemSCI := true.B
+    }
+
+    when(isTargetBranch || isTargetJump){
+      io.out(i).bits.lsControFlowSCI := true.B
     }
 
     // Dasics Meta Set Batch prologue instructions
