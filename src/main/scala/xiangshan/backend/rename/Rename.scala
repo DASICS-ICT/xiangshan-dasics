@@ -192,11 +192,13 @@ class Rename(implicit p: Parameters) extends XSModule
 
     //Translator for dasics write bound csr
     val addr = uops(i).ctrl.imm(11, 0)
+    val addrIsMPK = addr === Upkru.U
+    val addrIsDasicsCfg = (addr >= DasicsUMainCfgUL.U) && (addr <= DasicsUMainBoundHiUL.U)
     val addrInDasicsBound = ((addr >= DasicsLibBoundBase.U) && (addr < (DasicsLibBoundBase + 32).U)) ||
       (addr >= DasicsJmpBoundBase.U) && (addr <= DasicsJmpCfgBase.U) ||
       addr === DasicsLibCfgBase.U
     val isCSRWrite = (uops(i).ctrl.fuOpType === CSROpType.wrt  || uops(i).ctrl.fuOpType === CSROpType.wrti) && uops(i).ctrl.ldest === 0.U
-    isDasicsMetaSet(i) := ((!uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU) || uops(i).cf.mode === ModeS) && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && addrInDasicsBound
+    isDasicsMetaSet(i) := ((!uops(i).cf.dasicsUntrusted && uops(i).cf.mode === ModeU) || uops(i).cf.mode === ModeS) && uops(i).ctrl.fuType === FuType.csr && isCSRWrite && (addrInDasicsBound || addrIsMPK || addrIsDasicsCfg)
 
 
     when(isDasicsMetaSet(i)){
