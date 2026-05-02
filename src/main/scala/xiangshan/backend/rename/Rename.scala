@@ -251,6 +251,19 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
 
   }
 
+  // Invariant: PRF[FpZeroPRegIdx] is engineering-reserved as the FP physical
+  // zero register and must never be the destination of any FP-producing
+  // instruction. Combined with StdFreeList's initial pool [32..NRPhyRegs-1]
+  // (which excludes PRF[0..31]) and the freeReq mask below, this guarantees
+  // PRF[0] never reaches the allocatable pool, so allocatePhyReg cannot return
+  // it. See doc-xiangshan/paper-writing/03-design/scheme-A.md for how scheme A
+  // will leverage this reserved register for bulk caller-saved zeroing on
+  // dasicscall.jr.
+  for (i <- 0 until RenameWidth) {
+    XSError(io.out(i).valid && io.out(i).bits.ctrl.fpWen && (io.out(i).bits.pdest === FpZeroPRegIdx.U),
+      p"a fp-writing instruction got pdest=PRF[0], should never happen\n")
+  }
+
   /**
     * Instructions commit: update freelist and rename table
     */
@@ -279,8 +292,13 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
       II. Free List Update
        */
       if (fp) { // Float Point free list
-        fpFreeList.io.freeReq(i)  := commitValid && needDestRegCommit(fp, io.robCommits.info(i))
-        fpFreeList.io.freePhyReg(i) := io.robCommits.info(i).old_pdest
+        val oldPdest = io.robCommits.info(i).old_pdest
+        // FP PRF[0] is hardwired to zero, so never recycle it into the allocatable pool.
+        fpFreeList.io.freeReq(i)  := commitValid && needDestRegCommit(fp, io.robCommits.info(i)) &&
+          (oldPdest =/= FpZeroPRegIdx.U)
+        fpFreeList.io.freePhyReg(i) := oldPdest
+        XSError(fpFreeList.io.freeReq(i) && (fpFreeList.io.freePhyReg(i) === FpZeroPRegIdx.U),
+          p"fp PRF[0] freed unexpectedly at commit, pc=${Hexadecimal(io.robCommits.info(i).pc)}\n")
       } else { // Integer free list
         intFreeList.io.freeReq(i) := intRefCounter.io.freeRegs(i).valid
         intFreeList.io.freePhyReg(i) := intRefCounter.io.freeRegs(i).bits

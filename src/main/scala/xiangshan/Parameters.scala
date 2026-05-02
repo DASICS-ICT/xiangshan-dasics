@@ -368,6 +368,19 @@ trait HasXSParameter {
   val EnableLoadFastWakeUp = coreParams.EnableLoadFastWakeUp
   val NRPhyRegs = coreParams.NRPhyRegs
   val PhyRegIdxWidth = log2Up(NRPhyRegs)
+  // Physical zero registers, hardwired to constant 0.
+  // Int side: PRF[0] is the natural mapping for the architectural x0 (existing
+  //           behaviour, just a symbolic name here).
+  // FP  side: PRF[0] is reserved as a dedicated FP zero physical register.
+  //           FP ABI has no zero logical register, so PRF[0] is engineering-
+  //           reserved: read returns 0 (Regfile hasZero=true), never allocated
+  //           by the FP free list, never freed back, and never written by any
+  //           FP-producing instruction (enforced via XSError).
+  // Both indices are infrastructure for the upcoming hardware-accelerated
+  // caller-saved register clearing on dasicscall.jr (scheme A: bulk RAT remap;
+  // scheme B: lazy liveness-driven psrc rewrite).
+  val IntZeroPRegIdx = 0
+  val FpZeroPRegIdx  = 0
   val RobSize = coreParams.RobSize
   val IntRefCounterWidth = log2Ceil(RobSize)
   val LoadQueueSize = coreParams.LoadQueueSize

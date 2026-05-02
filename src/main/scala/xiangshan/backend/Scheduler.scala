@@ -370,7 +370,17 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
     else {
       // For floating-point function units, every instruction writes either int or fp regfile.
       val wen = wbPorts.map(_.valid)
-      Regfile(NRPhyRegs, readFpRf, wen, waddr, wdata, false, debugRead = Some(debugRead), fastSim = !env.FPGAPlatform)
+      // hasZero = true reserves PRF[0] as the FP physical zero register: reads
+      // of address 0 always return 0, and writes to address 0 are masked off
+      // inside Regfile. The XSError below catches upstream stages mis-routing
+      // an FP writeback to PRF[0] (which would silently waste a writeback port);
+      // upstream invariants (Rename pdest != FpZeroPRegIdx, free list never
+      // hands out PRF[0]) should make this assertion unreachable.
+      for ((w, a) <- wen.zip(waddr)) {
+        XSError(w && (a === FpZeroPRegIdx.U),
+          p"writing to fp PRF[0] is blocked, but wen was asserted (writeback wasted)\n")
+      }
+      Regfile(NRPhyRegs, readFpRf, wen, waddr, wdata, hasZero = true, debugRead = Some(debugRead), fastSim = !env.FPGAPlatform)
     }
   }
 
