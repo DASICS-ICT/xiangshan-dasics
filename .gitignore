@@ -362,3 +362,12 @@ stack.info*
 
 !ready-to-run/*
 
+# ai
+.claude/
+
+# Documentation companion repository (tracked separately at
+# https://github.com/zengsy99/xiangshan-dasics-reg-protection-doc).
+# Kept on disk under this path for convenient cross-reference but ignored
+# by this hardware repository's git history.
+doc-xiangshan/
+
