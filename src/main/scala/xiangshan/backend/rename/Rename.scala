@@ -42,6 +42,9 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val fpReadPorts = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
     val intRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val fpRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
+    // Scheme B (ADR 0003): init_bit write port, fan-out to InitBitTable
+    // and InitBitRewriteStage. Wired up by CtrlBlock in commit 6/7.
+    val initBitWritePorts = Vec(RenameWidth, Output(new InitBitWritePort))
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
   })
@@ -182,6 +185,13 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
 
     intRefCounter.io.allocate(i).valid := intSpecWen(i)
     intRefCounter.io.allocate(i).bits := io.out(i).bits.pdest
+
+    // Drive Scheme B (ADR 0003) init_bit write port. Same gating as
+    // intSpecWen/fpSpecWen so the init_bit table tracks the same
+    // valid+!walk+!redirect set as the speculative RAT.
+    io.initBitWritePorts(i).wen   := intSpecWen(i) || fpSpecWen(i)
+    io.initBitWritePorts(i).ldest := uops(i).ctrl.ldest
+    io.initBitWritePorts(i).isFp  := uops(i).ctrl.fpWen
   }
 
   /**
