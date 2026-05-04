@@ -25,7 +25,7 @@ import xiangshan._
 import xiangshan.backend.decode.{DecodeStage, FusionDecoder, ImmUnion}
 import xiangshan.backend.dispatch.{Dispatch, Dispatch2Rs, DispatchQueue}
 import xiangshan.backend.fu.PFEvent
-import xiangshan.backend.rename.{Rename, RenameTableWrapper}
+import xiangshan.backend.rename.{InitBitRewriteStage, InitBitTable, Rename, RenameTableWrapper}
 import xiangshan.backend.rob.{Rob, RobCSRIO, RobLsqIO}
 import xiangshan.frontend.{FtqPtr, FtqRead, Ftq_RF_Components}
 import xiangshan.mem.mdp.{LFST, SSIT, WaitTable}
@@ -250,6 +250,10 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   val waittable = Module(new WaitTable)
   val rename = Module(new Rename)
   val dispatch = Module(new Dispatch)
+  // Scheme B (ADR 0003): init_bit liveness table + Stage N+1 rewrite stage.
+  // Inserted between rename.io.out and dispatch.io.fromRename.
+  val initBitTable        = Module(new InitBitTable)
+  val initBitRewriteStage = Module(new InitBitRewriteStage)
   val intDq = Module(new DispatchQueue(dpParams.IntDqSize, RenameWidth, dpParams.IntDqDeqWidth))
   val fpDq = Module(new DispatchQueue(dpParams.FpDqSize, RenameWidth, dpParams.FpDqDeqWidth))
   val lsDq = Module(new DispatchQueue(dpParams.LsDqSize, RenameWidth, dpParams.LsDqDeqWidth))
@@ -428,9 +432,55 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rename.io.robCommits <> rob.io.commits
   rename.io.ssit <> ssit.io.rdata
 
-  // pipeline between rename and dispatch
+  // ───── Scheme B (ADR 0003) wiring ─────────────────────────────────────
+  // (1) Fan-out rename's init_bit write ports to both consumers.
+  initBitTable.io.renameWrite              := rename.io.initBitWritePorts
+  initBitRewriteStage.io.initBitWritePorts := rename.io.initBitWritePorts
+
+  // (2) InitBitTable read ports driven by InitBitRewriteStage. addr/isFp
+  //     are taken from io.fromRename (T-cycle, un-latched) inside the
+  //     stage so InitBitTable's T+1 RegNext data aligns with the stage's
+  //     internal T+1 latch. `<>` handles Flipped direction automatically.
+  initBitRewriteStage.io.initBitTableRead <> initBitTable.io.readPort
+
+  // (3) Control signals: flush from stage2Redirect, dasicsEn from CSR
+  //     (csrCtrl.dasics_enable already exists in CtrlBlock IO, see
+  //     DecodeUnit.scala:640 for prior usage).
+  initBitTable.io.flush           := stage2Redirect.valid
+  initBitTable.io.dasicsEn        := io.csrCtrl.dasics_enable
+  initBitRewriteStage.io.flush    := stage2Redirect.valid
+  initBitRewriteStage.io.dasicsEn := io.csrCtrl.dasics_enable
+
+  // (4) Placeholder commit/walk wiring (commit 7 will drive these from
+  //     rob.io.commits with dasicscall.jr detection on ROB head).
+  initBitTable.io.commit.dasicsCallJrCommit := false.B
+  initBitTable.io.commit.archWrite.foreach { w =>
+    w.wen   := false.B
+    w.ldest := 0.U
+    w.isFp  := false.B
+  }
+  initBitTable.io.walkWrite.foreach { w =>
+    w.wen      := false.B
+    w.ldest    := 0.U
+    w.isFp     := false.B
+    w.oldValue := false.B
+  }
+  // ──────────────────────────────────────────────────────────────────────
+
+  // pipeline between rename and dispatch (split into rename → stage N+1
+  // → dispatch by Scheme B; total +1 cycle vs baseline)
   for (i <- 0 until RenameWidth) {
-    PipelineConnect(rename.io.out(i), dispatch.io.fromRename(i), dispatch.io.recv(i), stage2Redirect.valid)
+    // rename → InitBitRewriteStage (direct, no PipelineConnect).
+    // The stage internally latches T → T+1 in lockstep with
+    // InitBitTable's RegNext-latched read data.
+    initBitRewriteStage.io.fromRename(i) <> rename.io.out(i)
+
+    // InitBitRewriteStage → dispatch (PipelineConnect = T+1 → T+2
+    // latch, replaces the baseline rename → dispatch PipelineConnect).
+    PipelineConnect(initBitRewriteStage.io.toDispatch(i),
+                    dispatch.io.fromRename(i),
+                    dispatch.io.recv(i),
+                    stage2Redirect.valid)
   }
 
   dispatch.io.hartId := io.hartId
