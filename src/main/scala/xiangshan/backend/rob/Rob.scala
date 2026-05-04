@@ -24,6 +24,7 @@ import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import utils._
 import xiangshan._
 import xiangshan.backend.exu.ExuConfig
+import xiangshan.backend.rename.{InitBitWalkPort, InitBitWritePort}
 import xiangshan.frontend.FtqPtr
 import xiangshan.backend.fu.DasicsConst
 
@@ -289,6 +290,14 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     val robFull = Output(Bool())
     val cpu_halt = Output(Bool())
     val wfi_enable = Input(Bool())
+    // Scheme B (ADR 0003): drive InitBitTable signals.
+    // Detection of dasicscall.jr at deqPtr (ROB head) is done internally;
+    // dasicsEn gating is performed inside InitBitTable.
+    val initBit = Output(new Bundle {
+      val dasicsCallJrCommit = Bool()
+      val archWrite = Vec(CommitWidth, new InitBitWritePort)
+      val walkWrite = Vec(CommitWidth, new InitBitWalkPort)
+    })
   })
 
   def selectWb(index: Int, func: Seq[ExuConfig] => Boolean): Seq[(Seq[ExuConfig], ValidIO[ExuOutput])] = {
@@ -305,6 +314,12 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   println(s"exuPorts: ${exuWbPorts.map(_._1.map(_.name))}")
   println(s"stdPorts: ${stdWbPorts.map(_._1.map(_.name))}")
   println(s"fflags: ${fflagsPorts.map(_._1.map(_.name))}")
+
+  // Scheme B (ADR 0003): per-ROB-entry dasicscall.jr tag.
+  // Written on enq, read at deqPtr to drive io.initBit.dasicsCallJrCommit.
+  // Under invariant I2 only one slot is true at a time (dasicscall.jr is
+  // ROB-exclusive at commit per ADR 0002 + hasBlockBackward).
+  val isDasicsCallJr = RegInit(VecInit(Seq.fill(RobSize)(false.B)))
 
 
   val exuWriteback = exuWbPorts.map(_._2)
@@ -439,6 +454,10 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       when (enqUop.ctrl.isWFI && !enqHasException && !enqHasTriggerCanFire) {
         hasWFI := true.B
       }
+      // Scheme B (ADR 0003): tag this ROB entry as dasicscall.jr (or not).
+      isDasicsCallJr(enqIndex) :=
+        enqUop.ctrl.fuType === FuType.jmp &&
+        enqUop.ctrl.fuOpType === JumpOpType.dasicscall_jr
     }
   }
   val dispatchNum = Mux(io.enq.canAccept, PopCount(io.enq.req.map(_.valid)), 0.U)
@@ -629,6 +648,32 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }
   if (env.EnableDifftest) {
     io.commits.info.map(info => dontTouch(info.pc))
+  }
+
+  // ──────────────── Scheme B (ADR 0003) IO drive ────────────────────────
+  // dasicsCallJrCommit pulse: ROB head is dasicscall.jr, head commits this
+  // cycle, no exception. dasicsEn gate is performed inside InitBitTable.
+  // commitValid(0) check is sufficient under invariant I2 (dasicscall.jr
+  // is ROB-exclusive at commit per ADR 0002).
+  val deqIsDasicsCallJr = isDasicsCallJr(deqPtr.value)
+  io.initBit.dasicsCallJrCommit :=
+    io.commits.isCommit && io.commits.commitValid(0) &&
+    !deqHasException && deqIsDasicsCallJr
+
+  // Per-port commit-time arch write (retire) and walk write (replay
+  // old_init_bit_value carried in RobCommitInfo).
+  for (i <- 0 until CommitWidth) {
+    val info       = io.commits.info(i)
+    val regWriting = info.rfWen || info.fpWen
+
+    io.initBit.archWrite(i).wen   := io.commits.isCommit && io.commits.commitValid(i) && regWriting
+    io.initBit.archWrite(i).ldest := info.ldest
+    io.initBit.archWrite(i).isFp  := info.fpWen
+
+    io.initBit.walkWrite(i).wen      := io.commits.isWalk && io.commits.walkValid(i) && regWriting
+    io.initBit.walkWrite(i).ldest    := info.ldest
+    io.initBit.walkWrite(i).isFp     := info.fpWen
+    io.initBit.walkWrite(i).oldValue := info.old_init_bit_value
   }
 
   // sync fflags/dirty_fs to csr

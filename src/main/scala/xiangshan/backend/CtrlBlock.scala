@@ -451,20 +451,12 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   initBitRewriteStage.io.flush    := stage2Redirect.valid
   initBitRewriteStage.io.dasicsEn := io.csrCtrl.dasics_enable
 
-  // (4) Placeholder commit/walk wiring (commit 7 will drive these from
-  //     rob.io.commits with dasicscall.jr detection on ROB head).
-  initBitTable.io.commit.dasicsCallJrCommit := false.B
-  initBitTable.io.commit.archWrite.foreach { w =>
-    w.wen   := false.B
-    w.ldest := 0.U
-    w.isFp  := false.B
-  }
-  initBitTable.io.walkWrite.foreach { w =>
-    w.wen      := false.B
-    w.ldest    := 0.U
-    w.isFp     := false.B
-    w.oldValue := false.B
-  }
+  // (4) Connect commit/walk paths from ROB (driven inside Rob.scala based
+  //     on dasicscall.jr detection at deqPtr and commit/walk valid signals;
+  //     dasicsEn gating happens inside InitBitTable).
+  initBitTable.io.commit.dasicsCallJrCommit := rob.io.initBit.dasicsCallJrCommit
+  initBitTable.io.commit.archWrite          := rob.io.initBit.archWrite
+  initBitTable.io.walkWrite                  := rob.io.initBit.walkWrite
   // ──────────────────────────────────────────────────────────────────────
 
   // pipeline between rename and dispatch (split into rename → stage N+1
