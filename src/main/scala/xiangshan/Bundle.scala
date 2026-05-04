@@ -236,6 +236,10 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
+  // Snapshot of init_bit_spec[ldest] sampled at stage N+1 of split rename
+  // (InitBitRewriteStage). Replayed by ROB walk-back to restore
+  // init_bit_spec when this uop is rolled back (Scheme B, ADR 0003).
+  val old_init_bit_value = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
@@ -373,6 +377,9 @@ class RobDispatchData(implicit p: Parameters) extends XSBundle {
   val old_pdest = UInt(PhyRegIdxWidth.W)
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
+  // Carries MicroOp.old_init_bit_value across ROB; consumed at walk-back.
+  // Mirrors old_pdest's lifecycle (sampled at rename, replayed on walk).
+  val old_init_bit_value = Bool()
 }
 
 class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
@@ -389,6 +396,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
     old_pdest := data.old_pdest
     ftqIdx := data.ftqIdx
     ftqOffset := data.ftqOffset
+    old_init_bit_value := data.old_init_bit_value
   }
 }
 
