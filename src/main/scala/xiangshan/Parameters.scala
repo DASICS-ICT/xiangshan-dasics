@@ -381,6 +381,24 @@ trait HasXSParameter {
   // scheme B: lazy liveness-driven psrc rewrite).
   val IntZeroPRegIdx = 0
   val FpZeroPRegIdx  = 0
+  // ────────────────────────────────────────────────────────────────────────────
+  // dasicscall.jr commit-time init_bit clear masks (Scheme B, ADR 0003).
+  // Each bit i in the mask corresponds to logical register index i.
+  // A '1' bit means "clear init_bit on dasicscall.jr commit"; '0' means
+  // "leave init_bit untouched".
+  //
+  // Coverage (RISC-V calling convention, caller-saved temporaries only):
+  //   IntMask = 0xF000_00E0  -- t0..t6      (x5..x7, x28..x31)
+  //   FpMask  = 0xF000_00FF  -- ft0..ft11   (f0..f7, f28..f31)
+  //
+  // Deliberately NOT cleared:
+  //   a*/fa* (ABI cross-domain arg-passing); s*/fs* (callee-saved, software-managed);
+  //   x0/ra/sp/gp/tp (system regs, cross-domain semantics differ).
+  //
+  // Stored as scala `Long`; consumers wrap with `.U(32.W)` at use site
+  // because `HasXSParameter` is a parameter trait, not a hardware module body.
+  val DasicsClearIntMask: Long = 0xF00000E0L
+  val DasicsClearFpMask:  Long = 0xF00000FFL
   val RobSize = coreParams.RobSize
   val IntRefCounterWidth = log2Ceil(RobSize)
   val LoadQueueSize = coreParams.LoadQueueSize
