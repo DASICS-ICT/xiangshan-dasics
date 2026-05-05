@@ -236,6 +236,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val eliminatedMove = Bool()
   val debugInfo = new PerfDebugInfo
   val dasicsUntrusted = Bool()
+  val old_init_bit_value = Bool()
 
   def needRfRPort(index: Int, isFp: Boolean, ignoreState: Boolean = true) : Bool = {
     val stateReady = srcState(index) === SrcState.rdy || ignoreState.B
@@ -371,6 +372,7 @@ class RobDispatchData(implicit p: Parameters) extends XSBundle {
   val commitType = CommitType()
   val pdest = UInt(PhyRegIdxWidth.W)
   val old_pdest = UInt(PhyRegIdxWidth.W)
+  val old_init_bit_value = Bool()
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
 }
@@ -387,6 +389,7 @@ class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
     commitType := data.commitType
     pdest := data.pdest
     old_pdest := data.old_pdest
+    old_init_bit_value := data.old_init_bit_value
     ftqIdx := data.ftqIdx
     ftqOffset := data.ftqOffset
   }
@@ -401,6 +404,7 @@ class RobCommitIO(implicit p: Parameters) extends XSBundle {
   val walkValid = Vec(CommitWidth, Output(Bool()))
 
   val info = Vec(CommitWidth, Output(new RobCommitInfo))
+  val dasicsCallJrCommit = Output(Bool())
 
   def hasWalkInstr: Bool = isWalk && walkValid.asUInt.orR
   def hasCommitInstr: Bool = isCommit && commitValid.asUInt.orR

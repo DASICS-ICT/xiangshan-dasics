@@ -93,6 +93,9 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     val intRenamePorts = Vec(RenameWidth, Input(new RatWritePort))
     val fpReadPorts = Vec(RenameWidth, Vec(4, new RatReadPort))
     val fpRenamePorts = Vec(RenameWidth, Input(new RatWritePort))
+    val initBitReadPorts = Vec(RenameWidth, Vec(4, new InitBitReadPort))
+    val initBitRenamePorts = Vec(RenameWidth, Input(new InitBitWritePort))
+    val dasicsEn = Input(Bool())
     // for debug printing
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
@@ -100,6 +103,12 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
 
   val intRat = Module(new RenameTable(float = false))
   val fpRat = Module(new RenameTable(float = true))
+  val initBitTable = Module(new InitBitTable)
+
+  initBitTable.io.robCommits := io.robCommits
+  initBitTable.io.renameWrite := io.initBitRenamePorts
+  initBitTable.io.readPorts <> io.initBitReadPorts
+  initBitTable.io.dasicsEn := io.dasicsEn
 
   intRat.io.debug_rdata <> io.debug_int_rat
   intRat.io.readPorts <> io.intReadPorts.flatten

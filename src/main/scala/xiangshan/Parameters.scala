@@ -381,6 +381,10 @@ trait HasXSParameter {
   // scheme B: lazy liveness-driven psrc rewrite).
   val IntZeroPRegIdx = 0
   val FpZeroPRegIdx  = 0
+  // DASICS scheme B clears only caller-saved temporary logical registers:
+  // int t0-t2 (x5-x7), t3-t6 (x28-x31); fp ft0-ft7 (f0-f7), ft8-ft11 (f28-f31).
+  def DasicsClearIntMask = "hF00000E0".U(32.W)
+  def DasicsClearFpMask  = "hF00000FF".U(32.W)
   val RobSize = coreParams.RobSize
   val IntRefCounterWidth = log2Ceil(RobSize)
   val LoadQueueSize = coreParams.LoadQueueSize

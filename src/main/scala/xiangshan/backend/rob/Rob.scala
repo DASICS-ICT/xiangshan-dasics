@@ -576,6 +576,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   io.commits.isWalk := state =/= s_idle
   io.commits.isCommit := state === s_idle && !blockCommit
+  io.commits.dasicsCallJrCommit := false.B
   val walk_v = VecInit(walkPtrVec.map(ptr => valid(ptr.value)))
   val commit_v = VecInit(deqPtrVec.map(ptr => valid(ptr.value)))
   // store will be commited iff both sta & std have been writebacked
@@ -627,6 +628,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       io.commits.info(i).ldest
     )
   }
+  val commitHeadUop = debug_microOp(deqPtr.value)
+  io.commits.dasicsCallJrCommit := io.commits.isCommit &&
+    io.commits.commitValid(0) &&
+    commitHeadUop.ctrl.fuType === FuType.jmp &&
+    JumpOpType.jumpOpIsDasicscallJR(commitHeadUop.ctrl.fuOpType)
   if (env.EnableDifftest) {
     io.commits.info.map(info => dontTouch(info.pc))
   }
@@ -849,6 +855,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     wdata.commitType := req.ctrl.commitType
     wdata.pdest := req.pdest
     wdata.old_pdest := req.old_pdest
+    wdata.old_init_bit_value := req.old_init_bit_value
     wdata.ftqIdx := req.cf.ftqPtr
     wdata.ftqOffset := req.cf.ftqOffset
   }

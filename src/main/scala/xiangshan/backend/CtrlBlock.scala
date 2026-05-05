@@ -376,6 +376,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rat.io.robCommits := rob.io.commits
   rat.io.intRenamePorts := rename.io.intRenamePorts
   rat.io.fpRenamePorts := rename.io.fpRenamePorts
+  rat.io.initBitRenamePorts := rename.io.initBitRenamePorts
+  rat.io.dasicsEn := io.csrCtrl.dasics_enable
+  rename.io.dasicsEn := RegNext(decode.io.csrCtrl.dasics_enable)
   rat.io.debug_int_rat <> io.debug_int_rat
   rat.io.debug_fp_rat <> io.debug_fp_rat
 
@@ -398,7 +401,18 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     rename.io.in(i).bits := renamePipe.bits
     rename.io.intReadPorts(i) := rat.io.intReadPorts(i).map(_.data)
     rename.io.fpReadPorts(i) := rat.io.fpReadPorts(i).map(_.data)
+    rename.io.initBitReadPorts(i) := rat.io.initBitReadPorts(i).map(_.data)
     rename.io.waittable(i) := RegEnable(waittable.io.rdata(i), decode.io.out(i).fire)
+
+    rat.io.initBitReadPorts(i)(0).addr := decode.io.out(i).bits.ctrl.lsrc(0)
+    rat.io.initBitReadPorts(i)(0).isFp := decode.io.out(i).bits.ctrl.srcType(0) === SrcType.fp
+    rat.io.initBitReadPorts(i)(1).addr := decode.io.out(i).bits.ctrl.lsrc(1)
+    rat.io.initBitReadPorts(i)(1).isFp := decode.io.out(i).bits.ctrl.srcType(1) === SrcType.fp
+    rat.io.initBitReadPorts(i)(2).addr := decode.io.out(i).bits.ctrl.lsrc(2)
+    rat.io.initBitReadPorts(i)(2).isFp := decode.io.out(i).bits.ctrl.srcType(2) === SrcType.fp
+    rat.io.initBitReadPorts(i)(3).addr := decode.io.out(i).bits.ctrl.ldest
+    rat.io.initBitReadPorts(i)(3).isFp := decode.io.out(i).bits.ctrl.fpWen
+    rat.io.initBitReadPorts(i).foreach(_.hold := !decode.io.out(i).ready)
 
     if (i < RenameWidth - 1) {
       // fusion decoder sees the raw decode info

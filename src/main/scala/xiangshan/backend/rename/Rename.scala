@@ -40,8 +40,11 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     // to rename table
     val intReadPorts = Vec(RenameWidth, Vec(3, Input(UInt(PhyRegIdxWidth.W))))
     val fpReadPorts = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
+    val initBitReadPorts = Vec(RenameWidth, Vec(4, Input(Bool())))
+    val dasicsEn = Input(Bool())
     val intRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val fpRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
+    val initBitRenamePorts = Vec(RenameWidth, Output(new InitBitWritePort))
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
   })
@@ -98,6 +101,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     uop.debugInfo := DontCare
     uop.lqIdx := DontCare
     uop.sqIdx := DontCare
+    uop.old_init_bit_value := true.B
   })
 
   val needFpDest = Wire(Vec(RenameWidth, Bool()))
@@ -108,6 +112,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
 
   val intSpecWen = Wire(Vec(RenameWidth, Bool()))
   val fpSpecWen = Wire(Vec(RenameWidth, Bool()))
+  val initBitRenameWrites = Wire(Vec(RenameWidth, new InitBitWritePort))
 
   // uop calculation
   for (i <- 0 until RenameWidth) {
@@ -178,7 +183,12 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
 
     intRefCounter.io.allocate(i).valid := intSpecWen(i)
     intRefCounter.io.allocate(i).bits := io.out(i).bits.pdest
+
+    initBitRenameWrites(i).wen := intSpecWen(i) || fpSpecWen(i)
+    initBitRenameWrites(i).addr := uops(i).ctrl.ldest
+    initBitRenameWrites(i).isFp := fpSpecWen(i)
   }
+  io.initBitRenamePorts := initBitRenameWrites
 
   /**
     * How to set psrc:
@@ -249,6 +259,50 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
       io.out(i).bits.psrc(1) := lui_imm(lui_imm.getWidth - 1, lui_imm_in_imm + psrcWidth)
     }
 
+  }
+
+  def forwardInitBit(i: Int, addr: UInt, isFp: Bool, base: Bool): Bool = {
+    if (i == 0) {
+      base
+    } else {
+      val hits = (0 until i).map { j =>
+        initBitRenameWrites(j).wen &&
+          initBitRenameWrites(j).addr === addr &&
+          initBitRenameWrites(j).isFp === isFp
+      }
+      Mux(VecInit(hits).asUInt.orR, true.B, base)
+    }
+  }
+
+  val effectiveInitBit = Wire(Vec(RenameWidth, Vec(4, Bool())))
+  val finalSrcInitBit = Wire(Vec(RenameWidth, Vec(3, Bool())))
+  for (i <- 0 until RenameWidth) {
+    val initBitAddrs = io.in(i).bits.ctrl.lsrc :+ io.in(i).bits.ctrl.ldest
+    val initBitIsFp = io.in(i).bits.ctrl.srcType.map(_ === SrcType.fp) :+ needFpDest(i)
+    for (k <- 0 until 4) {
+      effectiveInitBit(i)(k) := forwardInitBit(i, initBitAddrs(k), initBitIsFp(k), io.initBitReadPorts(i)(k))
+    }
+
+    for (k <- 0 until 3) {
+      finalSrcInitBit(i)(k) := effectiveInitBit(i)(k)
+    }
+    if (i < RenameWidth - 1) {
+      when (io.fusionInfo(i).rs2FromRs2 || io.fusionInfo(i).rs2FromRs1) {
+        finalSrcInitBit(i)(1) := Mux(io.fusionInfo(i).rs2FromRs2, effectiveInitBit(i + 1)(1), effectiveInitBit(i + 1)(0))
+      }.elsewhen(io.fusionInfo(i).rs2FromZero) {
+        finalSrcInitBit(i)(1) := true.B
+      }
+    }
+
+    io.out(i).bits.old_init_bit_value := Mux(needIntDest(i) || needFpDest(i), effectiveInitBit(i)(3), true.B)
+    for (k <- 0 until 3) {
+      val srcType = io.out(i).bits.ctrl.srcType(k)
+      val shouldRewrite = io.dasicsEn && io.out(i).bits.dasicsUntrusted && !finalSrcInitBit(i)(k) && SrcType.isRegOrFp(srcType)
+      val zeroPReg = Mux(SrcType.isFp(srcType), FpZeroPRegIdx.U, IntZeroPRegIdx.U)
+      when (shouldRewrite) {
+        io.out(i).bits.psrc(k) := zeroPReg
+      }
+    }
   }
 
   // Invariant: PRF[FpZeroPRegIdx] is engineering-reserved as the FP physical
