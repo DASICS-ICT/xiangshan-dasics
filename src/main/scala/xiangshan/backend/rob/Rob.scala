@@ -48,6 +48,15 @@ object RobPtr {
   }
 }
 
+object RobCommitDasicsCallDetector {
+  def apply(isCommit: Bool, commitValid: Bool, fuType: UInt, fuOpType: UInt): Bool = {
+    isCommit &&
+      commitValid &&
+      fuType === FuType.jmp &&
+      JumpOpType.jumpOpIsDasicscall(fuOpType)
+  }
+}
+
 class RobCSRIO(implicit p: Parameters) extends XSBundle {
   val intrBitSet = Input(Bool())
   val trapTarget = Input(UInt(VAddrBits.W))
@@ -576,7 +585,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   io.commits.isWalk := state =/= s_idle
   io.commits.isCommit := state === s_idle && !blockCommit
-  io.commits.dasicsCallJrCommit := false.B
+  io.commits.dasicsCallCommit := false.B
   val walk_v = VecInit(walkPtrVec.map(ptr => valid(ptr.value)))
   val commit_v = VecInit(deqPtrVec.map(ptr => valid(ptr.value)))
   // store will be commited iff both sta & std have been writebacked
@@ -629,10 +638,12 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     )
   }
   val commitHeadUop = debug_microOp(deqPtr.value)
-  io.commits.dasicsCallJrCommit := io.commits.isCommit &&
-    io.commits.commitValid(0) &&
-    commitHeadUop.ctrl.fuType === FuType.jmp &&
-    JumpOpType.jumpOpIsDasicscallJR(commitHeadUop.ctrl.fuOpType)
+  io.commits.dasicsCallCommit := RobCommitDasicsCallDetector(
+    io.commits.isCommit,
+    io.commits.commitValid(0),
+    commitHeadUop.ctrl.fuType,
+    commitHeadUop.ctrl.fuOpType
+  )
   if (env.EnableDifftest) {
     io.commits.info.map(info => dontTouch(info.pc))
   }

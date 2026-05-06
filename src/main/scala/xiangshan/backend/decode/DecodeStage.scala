@@ -22,7 +22,7 @@ import chisel3.util._
 import xiangshan._
 import utils._
 import xiangshan.ExceptionNO._
-import xiangshan.backend.rename.RatReadPort
+import xiangshan.backend.rename.{InitBitReadPort, RatReadPort}
 
 class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -33,6 +33,7 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents {
     // RAT read
     val intRat = Vec(RenameWidth, Vec(3, Flipped(new RatReadPort)))
     val fpRat = Vec(RenameWidth, Vec(4, Flipped(new RatReadPort)))
+    val initBit = Vec(RenameWidth, Vec(4, Flipped(new InitBitReadPort)))
     // csr control
     val csrCtrl = Input(new CustomCSRCtrlIO)
     // perf only
@@ -63,6 +64,18 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents {
     io.fpRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(2)
     io.fpRat(i)(3).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
     io.fpRat(i).foreach(_.hold := !io.out(i).ready)
+
+    // InitBitTable follows the same decode-rename read timing as RAT. The
+    // fourth port reads ldest so Rename can save old_init_bit_value into ROB.
+    io.initBit(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(0)
+    io.initBit(i)(0).isFp := decoders(i).io.deq.cf_ctrl.ctrl.srcType(0) === SrcType.fp
+    io.initBit(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(1)
+    io.initBit(i)(1).isFp := decoders(i).io.deq.cf_ctrl.ctrl.srcType(1) === SrcType.fp
+    io.initBit(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(2)
+    io.initBit(i)(2).isFp := decoders(i).io.deq.cf_ctrl.ctrl.srcType(2) === SrcType.fp
+    io.initBit(i)(3).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
+    io.initBit(i)(3).isFp := decoders(i).io.deq.cf_ctrl.ctrl.fpWen
+    io.initBit(i).foreach(_.hold := !io.out(i).ready)
   }
 
   val hasValid = VecInit(io.in.map(_.valid)).asUInt.orR

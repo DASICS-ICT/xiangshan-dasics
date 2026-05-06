@@ -377,7 +377,7 @@ trait HasXSParameter {
   //           by the FP free list, never freed back, and never written by any
   //           FP-producing instruction (enforced via XSError).
   // Both indices are infrastructure for the upcoming hardware-accelerated
-  // caller-saved register clearing on dasicscall.jr (scheme A: bulk RAT remap;
+  // caller-saved register clearing on DASICSCALL (scheme A: bulk RAT remap;
   // scheme B: lazy liveness-driven psrc rewrite).
   val IntZeroPRegIdx = 0
   val FpZeroPRegIdx  = 0

@@ -348,6 +348,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   decode.io.csrCtrl := RegNext(io.csrCtrl)
   decode.io.intRat <> rat.io.intReadPorts
   decode.io.fpRat <> rat.io.fpReadPorts
+  decode.io.initBit <> rat.io.initBitReadPorts
 
   // memory dependency predict
   // when decode, send fold pc to mdp
@@ -403,16 +404,6 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     rename.io.fpReadPorts(i) := rat.io.fpReadPorts(i).map(_.data)
     rename.io.initBitReadPorts(i) := rat.io.initBitReadPorts(i).map(_.data)
     rename.io.waittable(i) := RegEnable(waittable.io.rdata(i), decode.io.out(i).fire)
-
-    rat.io.initBitReadPorts(i)(0).addr := decode.io.out(i).bits.ctrl.lsrc(0)
-    rat.io.initBitReadPorts(i)(0).isFp := decode.io.out(i).bits.ctrl.srcType(0) === SrcType.fp
-    rat.io.initBitReadPorts(i)(1).addr := decode.io.out(i).bits.ctrl.lsrc(1)
-    rat.io.initBitReadPorts(i)(1).isFp := decode.io.out(i).bits.ctrl.srcType(1) === SrcType.fp
-    rat.io.initBitReadPorts(i)(2).addr := decode.io.out(i).bits.ctrl.lsrc(2)
-    rat.io.initBitReadPorts(i)(2).isFp := decode.io.out(i).bits.ctrl.srcType(2) === SrcType.fp
-    rat.io.initBitReadPorts(i)(3).addr := decode.io.out(i).bits.ctrl.ldest
-    rat.io.initBitReadPorts(i)(3).isFp := decode.io.out(i).bits.ctrl.fpWen
-    rat.io.initBitReadPorts(i).foreach(_.hold := !decode.io.out(i).ready)
 
     if (i < RenameWidth - 1) {
       // fusion decoder sees the raw decode info

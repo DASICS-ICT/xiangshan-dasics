@@ -37,7 +37,7 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
   private def idle(c: InitBitTable): Unit = {
     c.io.robCommits.isCommit.poke(false.B)
     c.io.robCommits.isWalk.poke(false.B)
-    c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+    c.io.robCommits.dasicsCallCommit.poke(false.B)
     c.io.dasicsEn.poke(false.B)
     for (i <- 0 until c.io.robCommits.commitValid.length) {
       c.io.robCommits.commitValid(i).poke(false.B)
@@ -61,10 +61,10 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
     test(new InitBitTable) { c =>
       idle(c)
       c.io.dasicsEn.poke(true.B)
-      c.io.robCommits.dasicsCallJrCommit.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
       c.clock.step()
 
-      c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
       c.io.readPorts(0)(0).addr.poke(5.U)
       c.io.readPorts(0)(0).isFp.poke(false.B)
       c.io.readPorts(0)(1).addr.poke(10.U)
@@ -86,10 +86,10 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
     test(new InitBitTable) { c =>
       idle(c)
       c.io.dasicsEn.poke(true.B)
-      c.io.robCommits.dasicsCallJrCommit.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
       c.clock.step()
 
-      c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
       c.io.robCommits.isWalk.poke(true.B)
       c.io.robCommits.walkValid(0).poke(true.B)
       c.io.robCommits.info(0).rfWen.poke(true.B)
@@ -118,10 +118,10 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
     test(new InitBitTable) { c =>
       idle(c)
       c.io.dasicsEn.poke(true.B)
-      c.io.robCommits.dasicsCallJrCommit.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
       c.clock.step()
 
-      c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
       c.io.renameWrite(0).wen.poke(true.B)
       c.io.renameWrite(0).addr.poke(5.U)
       c.io.renameWrite(0).isFp.poke(false.B)
@@ -134,9 +134,9 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
       c.io.readPorts(0)(0).data.expect(true.B)
 
       c.io.dasicsEn.poke(true.B)
-      c.io.robCommits.dasicsCallJrCommit.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
       c.clock.step()
-      c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
       c.io.robCommits.isCommit.poke(true.B)
       c.io.robCommits.commitValid(0).poke(true.B)
       c.io.robCommits.info(0).rfWen.poke(true.B)
@@ -147,13 +147,223 @@ class InitBitTableTest extends AnyFlatSpec with ChiselScalatestTester with Match
       c.io.robCommits.commitValid(0).poke(false.B)
 
       c.io.dasicsEn.poke(true.B)
-      c.io.robCommits.dasicsCallJrCommit.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
       c.clock.step()
-      c.io.robCommits.dasicsCallJrCommit.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
       c.io.readPorts(0)(0).addr.poke(5.U)
       c.io.readPorts(0)(0).isFp.poke(false.B)
       c.clock.step()
       c.io.readPorts(0)(0).data.expect(false.B)
+    }
+  }
+
+  it should "refresh held caller-saved read data across a later DASICS clear" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.readPorts(0)(1).addr.poke(10.U)
+      c.io.readPorts(0)(1).isFp.poke(false.B)
+      c.io.readPorts(0)(2).addr.poke(0.U)
+      c.io.readPorts(0)(2).isFp.poke(true.B)
+      c.io.readPorts(0)(3).addr.poke(12.U)
+      c.io.readPorts(0)(3).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+      c.io.readPorts(0)(2).data.expect(true.B)
+      c.io.readPorts(0)(3).data.expect(true.B)
+
+      for (i <- 0 until 4) {
+        c.io.readPorts(0)(i).hold.poke(true.B)
+      }
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(false.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+      c.io.readPorts(0)(2).data.expect(false.B)
+      c.io.readPorts(0)(3).data.expect(true.B)
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(false.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+      c.io.readPorts(0)(2).data.expect(false.B)
+      c.io.readPorts(0)(3).data.expect(true.B)
+
+      for (i <- 0 until 4) {
+        c.io.readPorts(0)(i).hold.poke(false.B)
+      }
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(false.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+      c.io.readPorts(0)(2).data.expect(false.B)
+      c.io.readPorts(0)(3).data.expect(true.B)
+    }
+  }
+
+  it should "bypass same-cycle rename writes to read data" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.clock.step()
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.renameWrite(0).wen.poke(true.B)
+      c.io.renameWrite(0).addr.poke(5.U)
+      c.io.renameWrite(0).isFp.poke(false.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+    }
+  }
+
+  it should "bypass rename writes to held read data across a DASICS clear" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.clock.step()
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.readPorts(0)(1).addr.poke(0.U)
+      c.io.readPorts(0)(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(false.B)
+      c.io.readPorts(0)(1).data.expect(false.B)
+
+      c.io.readPorts(0)(0).hold.poke(true.B)
+      c.io.readPorts(0)(1).hold.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.io.renameWrite(0).wen.poke(true.B)
+      c.io.renameWrite(0).addr.poke(5.U)
+      c.io.renameWrite(0).isFp.poke(false.B)
+      c.io.renameWrite(1).wen.poke(true.B)
+      c.io.renameWrite(1).addr.poke(0.U)
+      c.io.renameWrite(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+    }
+  }
+
+  it should "keep previous-cycle rename writes when a held read refreshes across a DASICS clear" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.clock.step()
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.readPorts(0)(1).addr.poke(0.U)
+      c.io.readPorts(0)(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(false.B)
+      c.io.readPorts(0)(1).data.expect(false.B)
+
+      c.io.renameWrite(0).wen.poke(true.B)
+      c.io.renameWrite(0).addr.poke(5.U)
+      c.io.renameWrite(0).isFp.poke(false.B)
+      c.io.renameWrite(1).wen.poke(true.B)
+      c.io.renameWrite(1).addr.poke(0.U)
+      c.io.renameWrite(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+
+      c.io.readPorts(0)(0).hold.poke(true.B)
+      c.io.readPorts(0)(1).hold.poke(true.B)
+      c.io.renameWrite(0).wen.poke(false.B)
+      c.io.renameWrite(1).wen.poke(false.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.readPorts(0)(0).hold.poke(false.B)
+      c.io.readPorts(0)(1).hold.poke(false.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+    }
+  }
+
+  it should "let younger rename writes win over a same-cycle DASICS clear" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.io.renameWrite(0).wen.poke(true.B)
+      c.io.renameWrite(0).addr.poke(5.U)
+      c.io.renameWrite(0).isFp.poke(false.B)
+      c.io.renameWrite(1).wen.poke(true.B)
+      c.io.renameWrite(1).addr.poke(0.U)
+      c.io.renameWrite(1).isFp.poke(true.B)
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.readPorts(0)(1).addr.poke(0.U)
+      c.io.readPorts(0)(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.renameWrite(0).wen.poke(false.B)
+      c.io.renameWrite(1).wen.poke(false.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
+    }
+  }
+
+  it should "let younger same-cycle commit writes win over a DASICS clear" in {
+    test(new InitBitTable) { c =>
+      idle(c)
+      c.io.dasicsEn.poke(true.B)
+      c.io.robCommits.dasicsCallCommit.poke(true.B)
+      c.io.robCommits.isCommit.poke(true.B)
+      c.io.robCommits.commitValid(0).poke(true.B)
+      c.io.robCommits.commitValid(1).poke(true.B)
+      c.io.robCommits.info(1).rfWen.poke(true.B)
+      c.io.robCommits.info(1).fpWen.poke(false.B)
+      c.io.robCommits.info(1).ldest.poke(5.U)
+      c.io.robCommits.commitValid(2).poke(true.B)
+      c.io.robCommits.info(2).rfWen.poke(true.B)
+      c.io.robCommits.info(2).fpWen.poke(false.B)
+      c.io.robCommits.info(2).ldest.poke(5.U)
+      c.io.robCommits.commitValid(3).poke(true.B)
+      c.io.robCommits.info(3).rfWen.poke(false.B)
+      c.io.robCommits.info(3).fpWen.poke(true.B)
+      c.io.robCommits.info(3).ldest.poke(0.U)
+      c.io.robCommits.commitValid(4).poke(true.B)
+      c.io.robCommits.info(4).rfWen.poke(false.B)
+      c.io.robCommits.info(4).fpWen.poke(true.B)
+      c.io.robCommits.info(4).ldest.poke(0.U)
+      c.clock.step()
+
+      c.io.robCommits.dasicsCallCommit.poke(false.B)
+      c.io.robCommits.isCommit.poke(false.B)
+      c.io.robCommits.commitValid(0).poke(false.B)
+      c.io.robCommits.commitValid(1).poke(false.B)
+      c.io.robCommits.commitValid(2).poke(false.B)
+      c.io.robCommits.commitValid(3).poke(false.B)
+      c.io.robCommits.commitValid(4).poke(false.B)
+      c.io.readPorts(0)(0).addr.poke(5.U)
+      c.io.readPorts(0)(0).isFp.poke(false.B)
+      c.io.readPorts(0)(1).addr.poke(0.U)
+      c.io.readPorts(0)(1).isFp.poke(true.B)
+      c.clock.step()
+      c.io.readPorts(0)(0).data.expect(true.B)
+      c.io.readPorts(0)(1).data.expect(true.B)
     }
   }
 }

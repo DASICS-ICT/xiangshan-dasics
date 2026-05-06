@@ -312,7 +312,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
   // PRF[0] never reaches the allocatable pool, so allocatePhyReg cannot return
   // it. See doc-xiangshan/paper-writing/03-design/scheme-A.md for how scheme A
   // will leverage this reserved register for bulk caller-saved zeroing on
-  // dasicscall.jr.
+  // DASICSCALL.
   for (i <- 0 until RenameWidth) {
     XSError(io.out(i).valid && io.out(i).bits.ctrl.fpWen && (io.out(i).bits.pdest === FpZeroPRegIdx.U),
       p"a fp-writing instruction got pdest=PRF[0], should never happen\n")

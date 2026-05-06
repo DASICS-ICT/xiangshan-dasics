@@ -404,7 +404,7 @@ class RobCommitIO(implicit p: Parameters) extends XSBundle {
   val walkValid = Vec(CommitWidth, Output(Bool()))
 
   val info = Vec(CommitWidth, Output(new RobCommitInfo))
-  val dasicsCallJrCommit = Output(Bool())
+  val dasicsCallCommit = Output(Bool())
 
   def hasWalkInstr: Bool = isWalk && walkValid.asUInt.orR
   def hasCommitInstr: Bool = isCommit && commitValid.asUInt.orR
