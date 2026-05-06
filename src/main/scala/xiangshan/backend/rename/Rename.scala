@@ -26,6 +26,19 @@ import xiangshan.backend.rob.RobPtr
 import xiangshan.backend.rename.freelist._
 import xiangshan.mem.mdp._
 
+object RenameZeroRewrite {
+  // ADR 0004 extends the original untrusted-only rewrite into the trap cleanup
+  // window, where trusted handler code is saving/restoring an untrusted context.
+  def rewriteContext(dasicsUntrusted: Bool, sregNotCleaned: Bool): Bool =
+    dasicsUntrusted || sregNotCleaned
+
+  def shouldRewrite(dasicsEn: Bool, dasicsUntrusted: Bool, sregNotCleaned: Bool, initBit: Bool, srcType: UInt): Bool =
+    dasicsEn && rewriteContext(dasicsUntrusted, sregNotCleaned) && !initBit && SrcType.isRegOrFp(srcType)
+
+  def zeroPReg(srcType: UInt, intZeroPRegIdx: Int, fpZeroPRegIdx: Int): UInt =
+    Mux(SrcType.isFp(srcType), fpZeroPRegIdx.U, intZeroPRegIdx.U)
+}
+
 class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
   val io = IO(new Bundle() {
     val redirect = Flipped(ValidIO(new Redirect))
@@ -42,6 +55,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val fpReadPorts = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
     val initBitReadPorts = Vec(RenameWidth, Vec(4, Input(Bool())))
     val dasicsEn = Input(Bool())
+    val sregNotCleaned = Input(Bool())
     val intRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val fpRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val initBitRenamePorts = Vec(RenameWidth, Output(new InitBitWritePort))
@@ -297,8 +311,14 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     io.out(i).bits.old_init_bit_value := Mux(needIntDest(i) || needFpDest(i), effectiveInitBit(i)(3), true.B)
     for (k <- 0 until 3) {
       val srcType = io.out(i).bits.ctrl.srcType(k)
-      val shouldRewrite = io.dasicsEn && io.out(i).bits.dasicsUntrusted && !finalSrcInitBit(i)(k) && SrcType.isRegOrFp(srcType)
-      val zeroPReg = Mux(SrcType.isFp(srcType), FpZeroPRegIdx.U, IntZeroPRegIdx.U)
+      val shouldRewrite = RenameZeroRewrite.shouldRewrite(
+        io.dasicsEn,
+        io.out(i).bits.dasicsUntrusted,
+        io.sregNotCleaned,
+        finalSrcInitBit(i)(k),
+        srcType
+      )
+      val zeroPReg = RenameZeroRewrite.zeroPReg(srcType, IntZeroPRegIdx, FpZeroPRegIdx)
       when (shouldRewrite) {
         io.out(i).bits.psrc(k) := zeroPReg
       }

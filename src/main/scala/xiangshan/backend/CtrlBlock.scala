@@ -380,6 +380,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rat.io.initBitRenamePorts := rename.io.initBitRenamePorts
   rat.io.dasicsEn := io.csrCtrl.dasics_enable
   rename.io.dasicsEn := RegNext(decode.io.csrCtrl.dasics_enable)
+  rename.io.sregNotCleaned := RegNext(decode.io.csrCtrl.sreg_not_cleaned)
   rat.io.debug_int_rat <> io.debug_int_rat
   rat.io.debug_fp_rat <> io.debug_fp_rat
 
