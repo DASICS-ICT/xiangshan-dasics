@@ -549,7 +549,7 @@ class CustomCSRCtrlIO(implicit p: Parameters) extends XSBundle {
   val mem_trigger = new MemTdataDistributeIO()
   val dasics_enable  = Output(Bool())
   // ADR 0004: CSR-owned trap cleanup window for Scheme B source rewrite.
-  val sreg_not_cleaned = Output(Bool())
+  val treg_not_cleaned = Output(Bool())
 }
 
 class DistributedCSRIO(implicit p: Parameters) extends XSBundle {

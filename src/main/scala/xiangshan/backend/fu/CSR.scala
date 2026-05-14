@@ -119,7 +119,7 @@ class CSRFileIO(implicit p: Parameters) extends XSBundle {
   * zero. The state is cleared only when a legal xRET returns to U-mode
   * untrusted code, not when it returns to an intermediate U-mode trusted stub.
   */
-class SregNotCleanedState(implicit p: Parameters) extends XSModule with HasCSRConst {
+class TregNotCleanedState(implicit p: Parameters) extends XSModule with HasCSRConst {
   val io = IO(new Bundle {
     val trapValid = Input(Bool())
     val trapPrivMode = Input(UInt(2.W))
@@ -129,10 +129,10 @@ class SregNotCleanedState(implicit p: Parameters) extends XSModule with HasCSRCo
     val xretLegal = Input(Bool())
     val xretReturnMode = Input(UInt(2.W))
     val xretReturnDasicsUntrusted = Input(Bool())
-    val sregNotCleaned = Output(Bool())
+    val tregNotCleaned = Output(Bool())
   })
 
-  val sregNotCleaned = RegInit(false.B)
+  val tregNotCleaned = RegInit(false.B)
   // CSR samples privilegeMode before trap entry changes it, so this identifies
   // the interrupted context rather than the handler target.
   val trapFromUUntrusted =
@@ -151,12 +151,12 @@ class SregNotCleanedState(implicit p: Parameters) extends XSModule with HasCSRCo
     io.xretReturnDasicsUntrusted
 
   when (trapFromUUntrusted) {
-    sregNotCleaned := true.B
+    tregNotCleaned := true.B
   }.elsewhen (clearOnXretToUUntrusted) {
-    sregNotCleaned := false.B
+    tregNotCleaned := false.B
   }
 
-  io.sregNotCleaned := sregNotCleaned
+  io.tregNotCleaned := tregNotCleaned
 }
 
 class CSR(implicit p: Parameters) extends FunctionUnit
@@ -394,7 +394,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val dasicsCfg = Wire(new DasicsMainCfg())
   dasicsCfg.gen(dasicsMainCfg)
   csrio.customCtrl.dasics_enable := dasicsCfg.uEnable
-  val sregNotCleanedState = Module(new SregNotCleanedState)
+  val tregNotCleanedState = Module(new TregNotCleanedState)
 
   val dasicsMainCallReg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
@@ -977,10 +977,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   // Branch control
   val retTarget = WireInit(0.U)
-  val sregNotCleanedXretValid = WireInit(false.B)
-  val sregNotCleanedXretLegal = WireInit(false.B)
-  val sregNotCleanedXretReturnMode = WireInit(ModeM)
-  val sregNotCleanedXretReturnDasicsUntrusted = WireInit(false.B)
+  val tregNotCleanedXretValid = WireInit(false.B)
+  val tregNotCleanedXretLegal = WireInit(false.B)
+  val tregNotCleanedXretReturnMode = WireInit(ModeM)
+  val tregNotCleanedXretReturnDasicsUntrusted = WireInit(false.B)
   val resetSatp = addr === Satp.U && wen // write to satp will cause the pipeline be flushed
   val w_fcsr_change_rm = wen && addr === Fcsr.U && wdata(7, 5) =/= fcsr(7, 5)
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
@@ -1012,7 +1012,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // Reuse the frontend DASICS main-bound convention for a single xRET target:
   // with startAddr=retTarget, tag 0 describes retTarget itself.
   val xretTargetDasicsUntrusted = dasicsCfg.uEnable && xretUMainBound.getPcTags(retTarget)(0)
-  sregNotCleanedXretReturnDasicsUntrusted := xretTargetDasicsUntrusted
+  tregNotCleanedXretReturnDasicsUntrusted := xretTargetDasicsUntrusted
 
   // Mux tree for regs
   when (valid) {
@@ -1031,9 +1031,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
       mstatusNew.ie.m := mstatusOld.pie.m
       privilegeMode := mstatusOld.mpp
-      sregNotCleanedXretValid := true.B
-      sregNotCleanedXretLegal := true.B
-      sregNotCleanedXretReturnMode := mstatusOld.mpp
+      tregNotCleanedXretValid := true.B
+      tregNotCleanedXretLegal := true.B
+      tregNotCleanedXretReturnMode := mstatusOld.mpp
       mstatusNew.pie.m := true.B
       mstatusNew.mpp := ModeU
       when (mstatusOld.mpp =/= ModeM) { mstatusNew.mprv := 0.U }
@@ -1043,9 +1043,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
       mstatusNew.ie.s := mstatusOld.pie.s
       privilegeMode := Cat(0.U(1.W), mstatusOld.spp)
-      sregNotCleanedXretValid := true.B
-      sregNotCleanedXretLegal := true.B
-      sregNotCleanedXretReturnMode := Cat(0.U(1.W), mstatusOld.spp)
+      tregNotCleanedXretValid := true.B
+      tregNotCleanedXretLegal := true.B
+      tregNotCleanedXretReturnMode := Cat(0.U(1.W), mstatusOld.spp)
       mstatusNew.pie.s := true.B
       mstatusNew.spp := ModeU
       mstatus := mstatusNew.asUInt
@@ -1056,9 +1056,9 @@ class CSR(implicit p: Parameters) extends FunctionUnit
       // mstatusNew.mpp.m := ModeU //TODO: add mode U
       mstatusNew.ie.u := mstatusOld.pie.u
       privilegeMode := ModeU
-      sregNotCleanedXretValid := true.B
-      sregNotCleanedXretLegal := true.B
-      sregNotCleanedXretReturnMode := ModeU
+      tregNotCleanedXretValid := true.B
+      tregNotCleanedXretLegal := true.B
+      tregNotCleanedXretReturnMode := ModeU
       mstatusNew.pie.u := true.B
       mstatus := mstatusNew.asUInt
     }
@@ -1222,15 +1222,15 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val causeNO = (hasIntr << (XLEN-1)).asUInt | Mux(hasIntr, intrNOReg, exceptionNO)
 
   val hasExceptionIntr = csrio.exception.valid
-  sregNotCleanedState.io.trapValid := csrio.exception.valid
-  sregNotCleanedState.io.trapPrivMode := privilegeMode
-  sregNotCleanedState.io.trapDasicsUntrusted := csrio.exception.bits.uop.cf.dasicsUntrusted
-  sregNotCleanedState.io.dasicsUEnable := dasicsCfg.uEnable
-  sregNotCleanedState.io.xretValid := sregNotCleanedXretValid
-  sregNotCleanedState.io.xretLegal := sregNotCleanedXretLegal
-  sregNotCleanedState.io.xretReturnMode := sregNotCleanedXretReturnMode
-  sregNotCleanedState.io.xretReturnDasicsUntrusted := sregNotCleanedXretReturnDasicsUntrusted
-  csrio.customCtrl.sreg_not_cleaned := sregNotCleanedState.io.sregNotCleaned
+  tregNotCleanedState.io.trapValid := csrio.exception.valid
+  tregNotCleanedState.io.trapPrivMode := privilegeMode
+  tregNotCleanedState.io.trapDasicsUntrusted := csrio.exception.bits.uop.cf.dasicsUntrusted
+  tregNotCleanedState.io.dasicsUEnable := dasicsCfg.uEnable
+  tregNotCleanedState.io.xretValid := tregNotCleanedXretValid
+  tregNotCleanedState.io.xretLegal := tregNotCleanedXretLegal
+  tregNotCleanedState.io.xretReturnMode := tregNotCleanedXretReturnMode
+  tregNotCleanedState.io.xretReturnDasicsUntrusted := tregNotCleanedXretReturnDasicsUntrusted
+  csrio.customCtrl.treg_not_cleaned := tregNotCleanedState.io.tregNotCleaned
 
   val hasDebugEbreakException = hasBreakPoint && ebreakEnterDebugMode
   val hasDebugTriggerException = hasTriggerFire && triggerFireAction === TrigActionEnum.DEBUG_MODE
