@@ -27,13 +27,13 @@ import xiangshan.backend.rename.freelist._
 import xiangshan.mem.mdp._
 
 object RenameZeroRewrite {
-  // ADR 0004 extends the original untrusted-only rewrite into the trap cleanup
-  // window, where trusted handler code is saving/restoring an untrusted context.
-  def rewriteContext(dasicsUntrusted: Bool, tregNotCleaned: Bool): Bool =
-    dasicsUntrusted || tregNotCleaned
+  // ADR 0004 extends the original untrusted-only rewrite into the untrusted
+  // context window, where trusted handler code is saving/restoring that context.
+  def rewriteContext(dasicsUntrusted: Bool, untrustedContextWindow: Bool): Bool =
+    dasicsUntrusted || untrustedContextWindow
 
-  def shouldRewrite(dasicsEn: Bool, dasicsUntrusted: Bool, tregNotCleaned: Bool, initBit: Bool, srcType: UInt): Bool =
-    dasicsEn && rewriteContext(dasicsUntrusted, tregNotCleaned) && !initBit && SrcType.isRegOrFp(srcType)
+  def shouldRewrite(dasicsEn: Bool, dasicsUntrusted: Bool, untrustedContextWindow: Bool, initBit: Bool, srcType: UInt): Bool =
+    dasicsEn && rewriteContext(dasicsUntrusted, untrustedContextWindow) && !initBit && SrcType.isRegOrFp(srcType)
 
   def zeroPReg(srcType: UInt, intZeroPRegIdx: Int, fpZeroPRegIdx: Int): UInt =
     Mux(SrcType.isFp(srcType), fpZeroPRegIdx.U, intZeroPRegIdx.U)
@@ -55,7 +55,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val fpReadPorts = Vec(RenameWidth, Vec(4, Input(UInt(PhyRegIdxWidth.W))))
     val initBitReadPorts = Vec(RenameWidth, Vec(4, Input(Bool())))
     val dasicsEn = Input(Bool())
-    val tregNotCleaned = Input(Bool())
+    val untrustedContextWindow = Input(Bool())
     val intRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val fpRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val initBitRenamePorts = Vec(RenameWidth, Output(new InitBitWritePort))
@@ -314,7 +314,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
       val shouldRewrite = RenameZeroRewrite.shouldRewrite(
         io.dasicsEn,
         io.out(i).bits.dasicsUntrusted,
-        io.tregNotCleaned,
+        io.untrustedContextWindow,
         finalSrcInitBit(i)(k),
         srcType
       )

@@ -24,10 +24,10 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.must.Matchers
 import top.DefaultConfig
 import xiangshan._
-import xiangshan.backend.fu.TregNotCleanedState
+import xiangshan.backend.fu.UntrustedContextWindowState
 import xiangshan.backend.fu.util.HasCSRConst
 
-class TregNotCleanedStateProbe(implicit p: Parameters) extends XSModule with HasCSRConst {
+class UntrustedContextWindowStateProbe(implicit p: Parameters) extends XSModule with HasCSRConst {
   val io = IO(new Bundle {
     val trapValid = Input(Bool())
     val trapPrivMode = Input(UInt(2.W))
@@ -40,7 +40,7 @@ class TregNotCleanedStateProbe(implicit p: Parameters) extends XSModule with Has
     val state = Output(Bool())
   })
 
-  val state = Module(new TregNotCleanedState)
+  val state = Module(new UntrustedContextWindowState)
   state.io.trapValid := io.trapValid
   state.io.trapPrivMode := io.trapPrivMode
   state.io.trapDasicsUntrusted := io.trapDasicsUntrusted
@@ -49,18 +49,18 @@ class TregNotCleanedStateProbe(implicit p: Parameters) extends XSModule with Has
   state.io.xretLegal := io.xretLegal
   state.io.xretReturnMode := io.xretReturnMode
   state.io.xretReturnDasicsUntrusted := io.xretReturnDasicsUntrusted
-  io.state := state.io.tregNotCleaned
+  io.state := state.io.untrustedContextWindow
 }
 
-class TregNotCleanedStateTest extends AnyFlatSpec with ChiselScalatestTester with Matchers with HasCSRConst {
-  behavior of "treg_not_cleaned state"
+class UntrustedContextWindowStateTest extends AnyFlatSpec with ChiselScalatestTester with Matchers with HasCSRConst {
+  behavior of "untrusted_context_window state"
 
   private val baseConfig: Parameters = new DefaultConfig
   private implicit val p: Parameters = baseConfig.alterPartial({
     case XSCoreParamsKey => baseConfig(XSTileKey).head
   })
 
-  private def idle(c: TregNotCleanedStateProbe): Unit = {
+  private def idle(c: UntrustedContextWindowStateProbe): Unit = {
     c.io.trapValid.poke(false.B)
     c.io.trapPrivMode.poke(ModeM)
     c.io.trapDasicsUntrusted.poke(false.B)
@@ -71,7 +71,7 @@ class TregNotCleanedStateTest extends AnyFlatSpec with ChiselScalatestTester wit
     c.io.xretReturnDasicsUntrusted.poke(false.B)
   }
 
-  private def trap(c: TregNotCleanedStateProbe, mode: UInt, untrusted: Boolean, dasicsUEnable: Boolean = true): Unit = {
+  private def trap(c: UntrustedContextWindowStateProbe, mode: UInt, untrusted: Boolean, dasicsUEnable: Boolean = true): Unit = {
     idle(c)
     c.io.trapValid.poke(true.B)
     c.io.trapPrivMode.poke(mode)
@@ -82,7 +82,7 @@ class TregNotCleanedStateTest extends AnyFlatSpec with ChiselScalatestTester wit
   }
 
   private def xret(
-    c: TregNotCleanedStateProbe,
+    c: UntrustedContextWindowStateProbe,
     legal: Boolean,
     returnMode: UInt,
     returnDasicsUntrusted: Boolean = true
@@ -97,7 +97,7 @@ class TregNotCleanedStateTest extends AnyFlatSpec with ChiselScalatestTester wit
   }
 
   it should "set only on enabled U untrusted traps" in {
-    test(new TregNotCleanedStateProbe) { c =>
+    test(new UntrustedContextWindowStateProbe) { c =>
       idle(c)
       trap(c, ModeU, untrusted = false)
       c.io.state.expect(false.B)
@@ -117,7 +117,7 @@ class TregNotCleanedStateTest extends AnyFlatSpec with ChiselScalatestTester wit
   }
 
   it should "keep state across nested returns to S and illegal xRET, then clear on final xRET to U untrusted" in {
-    test(new TregNotCleanedStateProbe) { c =>
+    test(new UntrustedContextWindowStateProbe) { c =>
       idle(c)
       trap(c, ModeU, untrusted = true)
       c.io.state.expect(true.B)

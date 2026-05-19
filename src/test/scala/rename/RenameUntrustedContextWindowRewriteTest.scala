@@ -30,7 +30,7 @@ class RenameRewriteProbe(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle {
     val dasicsEn = Input(Bool())
     val dasicsUntrusted = Input(Bool())
-    val tregNotCleaned = Input(Bool())
+    val untrustedContextWindow = Input(Bool())
     val initBit = Input(Bool())
     val srcType = Input(SrcType())
     val psrc = Input(UInt(PhyRegIdxWidth.W))
@@ -40,15 +40,15 @@ class RenameRewriteProbe(implicit p: Parameters) extends XSModule {
   val shouldRewrite = RenameZeroRewrite.shouldRewrite(
     io.dasicsEn,
     io.dasicsUntrusted,
-    io.tregNotCleaned,
+    io.untrustedContextWindow,
     io.initBit,
     io.srcType
   )
   io.rewrittenPsrc := Mux(shouldRewrite, RenameZeroRewrite.zeroPReg(io.srcType, 0, 0), io.psrc)
 }
 
-class RenameTregNotCleanedRewriteTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
-  behavior of "Rename treg_not_cleaned rewrite"
+class RenameUntrustedContextWindowRewriteTest extends AnyFlatSpec with ChiselScalatestTester with Matchers {
+  behavior of "Rename untrusted_context_window rewrite"
 
   private val baseConfig: Parameters = new DefaultConfig
   private implicit val p: Parameters = baseConfig.alterPartial({
@@ -58,34 +58,34 @@ class RenameTregNotCleanedRewriteTest extends AnyFlatSpec with ChiselScalatestTe
   private def setupCase(
     c: RenameRewriteProbe,
     dasicsEn: Boolean,
-    tregNotCleaned: Boolean,
+    untrustedContextWindow: Boolean,
     dasicsUntrusted: Boolean,
     initBit: Boolean,
     srcType: UInt = SrcType.reg
   ): Unit = {
     c.io.dasicsEn.poke(dasicsEn.B)
-    c.io.tregNotCleaned.poke(tregNotCleaned.B)
+    c.io.untrustedContextWindow.poke(untrustedContextWindow.B)
     c.io.dasicsUntrusted.poke(dasicsUntrusted.B)
     c.io.initBit.poke(initBit.B)
     c.io.srcType.poke(srcType)
     c.io.psrc.poke(23.U)
   }
 
-  it should "extend DASICS source rewrite to the trap cleanup window" in {
+  it should "extend DASICS source rewrite to the untrusted context window" in {
     test(new RenameRewriteProbe) { c =>
-      setupCase(c, dasicsEn = true, tregNotCleaned = false, dasicsUntrusted = false, initBit = false)
+      setupCase(c, dasicsEn = true, untrustedContextWindow = false, dasicsUntrusted = false, initBit = false)
       c.io.rewrittenPsrc.expect(23.U)
 
-      setupCase(c, dasicsEn = true, tregNotCleaned = false, dasicsUntrusted = true, initBit = false)
+      setupCase(c, dasicsEn = true, untrustedContextWindow = false, dasicsUntrusted = true, initBit = false)
       c.io.rewrittenPsrc.expect(0.U)
 
-      setupCase(c, dasicsEn = true, tregNotCleaned = true, dasicsUntrusted = false, initBit = false)
+      setupCase(c, dasicsEn = true, untrustedContextWindow = true, dasicsUntrusted = false, initBit = false)
       c.io.rewrittenPsrc.expect(0.U)
 
-      setupCase(c, dasicsEn = true, tregNotCleaned = true, dasicsUntrusted = false, initBit = true)
+      setupCase(c, dasicsEn = true, untrustedContextWindow = true, dasicsUntrusted = false, initBit = true)
       c.io.rewrittenPsrc.expect(23.U)
 
-      setupCase(c, dasicsEn = false, tregNotCleaned = true, dasicsUntrusted = true, initBit = false)
+      setupCase(c, dasicsEn = false, untrustedContextWindow = true, dasicsUntrusted = true, initBit = false)
       c.io.rewrittenPsrc.expect(23.U)
     }
   }
