@@ -464,24 +464,6 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   assert(inflightJumpPSICnt >= 0.U, "inflightJumpPSICnt is negative")
 
-  // //frontend flush
-  // val jumpPSIFlushWb = Wire(Valid(new PredecodeWritebackBundle))
-  // val f3_jumpPSI_missOffset = Wire(ValidUndirectioned(UInt(log2Ceil(PredictWidth).W)))
-  // f3_jumpPSI_missOffset.valid := f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
-  // f3_jumpPSI_missOffset.bits  := 0.U
-
-  // jumpPSIFlushWb.valid           := f3_fire && toIbufferHasJumpPSI && f3_dasics_mode === ModeU
-  // jumpPSIFlushWb.bits.pc         := f3_pc
-  // jumpPSIFlushWb.bits.pd         := f3_pd
-  // jumpPSIFlushWb.bits.pd.zipWithIndex.map{case(instr,i) => instr.valid :=  f3_expd_instr(i)}
-  // jumpPSIFlushWb.bits.ftqIdx     := f3_ftq_req.ftqIdx
-  // jumpPSIFlushWb.bits.ftqOffset  := f3_ftq_req.ftqOffset.bits
-  // jumpPSIFlushWb.bits.misOffset  := f3_jumpPSI_missOffset
-  // jumpPSIFlushWb.bits.cfiOffset  := DontCare
-  // jumpPSIFlushWb.bits.target     := f3_ftq_req.nextStartAddr
-  // jumpPSIFlushWb.bits.jalTarget  := DontCare
-  // jumpPSIFlushWb.bits.instrRange := f3_expd_instr
-
   /*** MMIO State Machine***/
   val f3_mmio_data    = Reg(Vec(2, UInt(16.W)))
   val mmio_is_RVC     = RegInit(false.B)
