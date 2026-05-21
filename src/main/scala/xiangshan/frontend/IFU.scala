@@ -182,9 +182,6 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   /** <PERF> f0 fetch bubble */
 
-  XSPerfAccumulate("LightSerialFrontendStallCycle",   f2_valid && !icacheRespAllValid )
-
-
   XSPerfAccumulate("fetch_bubble_ftq_not_valid",   !fromFtq.req.valid && fromFtq.req.ready  )
   // XSPerfAccumulate("fetch_bubble_pipe_stall",    f0_valid && toICache(0).ready && toICache(1).ready && !f1_ready )
   // XSPerfAccumulate("fetch_bubble_icache_0_busy",   f0_valid && !toICache(0).ready  )
@@ -380,6 +377,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f2_crossPageFault = VecInit((0 until PredictWidth).map(i => isLastInLine(f2_pc(i)) && !f2_except_pf(0) && f2_doubleLine &&  f2_except_pf(1) && !f2_pd(i).isRVC ))
 
   XSPerfAccumulate("fetch_bubble_icache_not_resp",   f2_valid && !icacheRespAllValid )
+  XSPerfAccumulate("LightSerialFrontendStallCycle",   f2_valid && !icacheRespAllValid )
 
 
   /**
