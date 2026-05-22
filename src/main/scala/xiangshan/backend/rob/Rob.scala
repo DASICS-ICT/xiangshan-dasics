@@ -828,12 +828,35 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     InflightMemPSICnt := InflightMemPSICnt - commitMemPSINum
   }
 
+  // Anti-deadlock timeout mechanism for InflightControlFlowPSICnt:
+  // When the counter transitions from 0 to non-zero, start a timer that increments every cycle.
+  // If the timer reaches the threshold while the counter is still non-zero, force clear the counter.
+  // When the counter transitions from non-zero back to 0, reset the timer.
+  val InflightControlFlowPSITimeoutThreshold = 100.U
+  val InflightControlFlowPSITimeoutCnt = RegInit(0.U(7.W))
+  dontTouch(InflightControlFlowPSITimeoutCnt)
+
+  val icfpsi_next = WireInit(InflightControlFlowPSICnt)
   when(io.enq.canAccept && doCommit){
-    InflightControlFlowPSICnt := InflightControlFlowPSICnt + enqControlFlowPSINum - commitControlFlowPSINum
+    icfpsi_next := InflightControlFlowPSICnt + enqControlFlowPSINum - commitControlFlowPSINum
   }.elsewhen(io.enq.canAccept){
-    InflightControlFlowPSICnt := InflightControlFlowPSICnt + enqControlFlowPSINum
+    icfpsi_next := InflightControlFlowPSICnt + enqControlFlowPSINum
   }.elsewhen(doCommit){
-    InflightControlFlowPSICnt := InflightControlFlowPSICnt - commitControlFlowPSINum
+    icfpsi_next := InflightControlFlowPSICnt - commitControlFlowPSINum
+  }
+
+  val icfpsi_force_clear = (InflightControlFlowPSITimeoutCnt === InflightControlFlowPSITimeoutThreshold) && (InflightControlFlowPSICnt =/= 0.U)
+  val icfpsi_actual_next = Mux(icfpsi_force_clear, 0.U, icfpsi_next)
+  InflightControlFlowPSICnt := icfpsi_actual_next
+
+  val icfpsi_is_zero_now  = InflightControlFlowPSICnt === 0.U
+  val icfpsi_is_zero_next = icfpsi_actual_next === 0.U
+  when(icfpsi_is_zero_now && !icfpsi_is_zero_next) {
+    InflightControlFlowPSITimeoutCnt := 1.U
+  }.elsewhen(!icfpsi_is_zero_now && icfpsi_is_zero_next) {
+    InflightControlFlowPSITimeoutCnt := 0.U
+  }.elsewhen(!icfpsi_is_zero_now && !icfpsi_is_zero_next) {
+    InflightControlFlowPSITimeoutCnt := InflightControlFlowPSITimeoutCnt + 1.U
   }
 
   // status field: writebacked

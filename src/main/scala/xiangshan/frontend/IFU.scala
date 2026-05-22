@@ -452,12 +452,35 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   //both commit and has jump psi
   //update inflightJumpPSICnt when commit and has jump psi
+  // Anti-deadlock timeout mechanism for inflightJumpPSICnt:
+  // When the counter transitions from 0 to non-zero, start a timer that increments every cycle.
+  // If the timer reaches the threshold while the counter is still non-zero, force clear the counter.
+  // When the counter transitions from non-zero back to 0, reset the timer.
+  val inflightJumpPSITimeoutThreshold = 100.U
+  val inflightJumpPSITimeoutCnt = RegInit(0.U(7.W))
+  dontTouch(inflightJumpPSITimeoutCnt)
+
+  val ijpsi_next = WireInit(inflightJumpPSICnt)
   when(commitCondition && increaseCondition){
-    inflightJumpPSICnt := cf_psi_count_rob - PopCount(jump_psi_commit_vec) + PopCount(toIbufferJumpPSIVec)
+    ijpsi_next := cf_psi_count_rob - PopCount(jump_psi_commit_vec) + PopCount(toIbufferJumpPSIVec)
   }.elsewhen(commitCondition){
-    inflightJumpPSICnt := cf_psi_count_rob - PopCount(jump_psi_commit_vec)
+    ijpsi_next := cf_psi_count_rob - PopCount(jump_psi_commit_vec)
   }.elsewhen(increaseCondition){
-    inflightJumpPSICnt := inflightJumpPSICnt + PopCount(toIbufferJumpPSIVec)
+    ijpsi_next := inflightJumpPSICnt + PopCount(toIbufferJumpPSIVec)
+  }
+
+  val ijpsi_force_clear = (inflightJumpPSITimeoutCnt === inflightJumpPSITimeoutThreshold) && (inflightJumpPSICnt =/= 0.U)
+  val ijpsi_actual_next = Mux(ijpsi_force_clear, 0.U, ijpsi_next)
+  inflightJumpPSICnt := ijpsi_actual_next
+
+  val ijpsi_is_zero_now  = inflightJumpPSICnt === 0.U
+  val ijpsi_is_zero_next = ijpsi_actual_next === 0.U
+  when(ijpsi_is_zero_now && !ijpsi_is_zero_next) {
+    inflightJumpPSITimeoutCnt := 1.U
+  }.elsewhen(!ijpsi_is_zero_now && ijpsi_is_zero_next) {
+    inflightJumpPSITimeoutCnt := 0.U
+  }.elsewhen(!ijpsi_is_zero_now && !ijpsi_is_zero_next) {
+    inflightJumpPSITimeoutCnt := inflightJumpPSITimeoutCnt + 1.U
   }
 
   assert(inflightJumpPSICnt >= 0.U, "inflightJumpPSICnt is negative")
