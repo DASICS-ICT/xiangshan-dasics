@@ -261,6 +261,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   if (HasCExtension) { extList = extList :+ 'c' }
   if (HasNExtension) { extList = extList :+ 'n' }
   if (HasFPU) { extList = extList ++ List('f', 'd') }
+  if (HasRVV) { extList = extList :+ 'v' }
   val misaInitVal = getMisaMxl(2) | extList.foldLeft(0L)((sum, i) => sum | getMisaExt(i)) //"h8000000000141105".U
   val misa = RegInit(UInt(XLEN.W), misaInitVal.U)
 
