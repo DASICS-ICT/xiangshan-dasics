@@ -47,7 +47,7 @@ case class XSCoreParameters
   HasCExtension: Boolean = true,
   HasNExtension: Boolean = true,
   HasDasics: Boolean = true,
-  HasRVV: Boolean = false,
+  HasRVV: Boolean = true,
   HasDiv: Boolean = true,
   HasICache: Boolean = true,
   HasDCache: Boolean = true,
