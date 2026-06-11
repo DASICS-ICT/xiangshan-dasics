@@ -22,6 +22,16 @@ SCALA_FILE = $(shell find ./src/main/scala -name '*.scala')
 TEST_FILE = $(shell find ./src/test/scala -name '*.scala')
 MEM_GEN = ./scripts/vlsi_mem_gen
 
+# The Scala 2.12 toolchain used by this tree is built for JDK 17-era classfiles.
+# Prefer the local JDK 17 when callers have not selected a Java runtime explicitly.
+JAVA17_HOME ?= /usr/lib/jvm/java-17-openjdk-amd64
+ifeq ($(JAVA_HOME),)
+ifneq ($(wildcard $(JAVA17_HOME)/bin/java),)
+export JAVA_HOME := $(JAVA17_HOME)
+export PATH := $(JAVA_HOME)/bin:$(PATH)
+endif
+endif
+
 SIMTOP  = top.SimTop
 IMAGE  ?= temp
 CONFIG ?= DefaultConfig
@@ -154,4 +164,3 @@ verdi_rtl:
 	cd sim/rtl/$(RUN_BIN) && verdi -sv -2001 +verilog2001ext+v +systemverilogext+v -ssf tb_top.vf -dbdir simv.daidir -f sim_flist.f
 
 .PHONY: verilog sim-verilog emu clean help init bump bsp $(REF_SO)
-

@@ -48,6 +48,9 @@ case class XSCoreParameters
   HasNExtension: Boolean = true,
   HasDasics: Boolean = true,
   HasRVV: Boolean = true,
+  // Architectural vector register width in bits. RVV CSR constants and
+  // first-stage VLMAX values are derived from this single source.
+  VLEN: Int = 128,
   HasDiv: Boolean = true,
   HasICache: Boolean = true,
   HasDCache: Boolean = true,
@@ -242,6 +245,9 @@ case class XSCoreParameters
   usePTWRepeater: Boolean = false,
   softPTW: Boolean = false // dpi-c debug only
 ){
+  require(VLEN >= 32 && VLEN <= 65536 && (VLEN & (VLEN - 1)) == 0,
+    "VLEN must be a power of two between 32 and 65536")
+
   val allHistLens = SCHistLens ++ ITTageTableInfos.map(_._2) ++ TageTableInfos.map(_._2) :+ UbtbGHRLength
   val HistoryLength = allHistLens.max + numBr * FtqSize + 9 // 256 for the predictor configs now
 
@@ -289,6 +295,12 @@ trait HasXSParameter {
   val HasNExtension = coreParams.HasNExtension
   val HasDasics = coreParams.HasDasics
   val HasRVV = coreParams.HasRVV
+  val VLEN = coreParams.VLEN
+  // vlenb is architectural VLEN in bytes. vstart needs enough bits to encode
+  // the largest possible element index, which is VLEN - 1 when LMUL=8 and SEW=8.
+  val VLENB = VLEN / 8
+  val VStartBits = log2Ceil(VLEN)
+  val E32M1VLMAX = VLEN / 32
   val HasDiv = coreParams.HasDiv
   val HasIcache = coreParams.HasICache
   val HasDcache = coreParams.HasDCache

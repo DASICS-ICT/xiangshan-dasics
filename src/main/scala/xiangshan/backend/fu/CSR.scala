@@ -753,11 +753,36 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(Spkctl, spkctl, spkctlMask)
   )
 
+  // Minimal RVV CSR bank. HasRVV only controls whether these CSR addresses
+  // exist in the static CSR map; mstatus.VS still gates runtime accessibility.
+  val rvvCsrMapping = if (HasRVV) {
+    val vstart = RegInit(0.U(XLEN.W))
+    val vl = RegInit(0.U(XLEN.W))
+    // The vector spec recommends reset with vill set and all other vtype bits clear.
+    val vtypeInit = (BigInt(1) << (XLEN - 1)).U(XLEN.W)
+    val vtype = RegInit(vtypeInit)
+    // vstart has enough writable bits for the largest element index, VLEN - 1.
+    val vstartMask = ZeroExt(GenMask(VStartBits - 1, 0), XLEN)
+    // Only vill and the architectural low vtype bits are visible; reserved bits read as zero.
+    val vtypeRmask = vtypeInit | ZeroExt(GenMask(7, 0), XLEN)
+    val vlenb = VLENB.U(XLEN.W)
+
+    Map(
+      MaskedRegMap(Vstart, vstart, vstartMask),
+      MaskedRegMap(Vl, vl, 0.U(XLEN.W), MaskedRegMap.Unwritable),
+      MaskedRegMap(Vtype, vtype, 0.U(XLEN.W), MaskedRegMap.Unwritable, vtypeRmask),
+      MaskedRegMap(Vlenb, vlenb, 0.U(XLEN.W), MaskedRegMap.Unwritable)
+    )
+  } else {
+    Map.empty[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)]
+  }
+
   val mapping = basicPrivMapping ++
                 perfCntMapping ++
                 pmpMapping ++
                 pmaMapping ++
                 mpkMapping ++
+                rvvCsrMapping ++
                 (if (HasFPU) fcsrMapping else Nil) ++
                 (if (HasCustomCSRCacheOp) cacheopMapping else Nil) ++
                 (if (HasNExtension) userMapping else Nil) ++
@@ -798,6 +823,17 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val addrInNExt = (addr === Ustatus.U) || (addr === Uie.U) || (addr === Utvec.U) ||
                    (addr >= Uscratch.U) && (addr <= Utimer.U)
   val addrIsMPK  = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
+  // RVV CSR address classes used by the local VS and URO permission gates.
+  val addrIsRvvCsr = if (HasRVV) {
+    addr === Vstart.U || addr === Vl.U || addr === Vtype.U || addr === Vlenb.U
+  } else {
+    false.B
+  }
+  val addrIsRvvUroCsr = if (HasRVV) {
+    addr === Vl.U || addr === Vtype.U || addr === Vlenb.U
+  } else {
+    false.B
+  }
 
   val addrInProtection = addrInDasics || addrInNExt || addrIsMPK
 
@@ -811,12 +847,44 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   // general CSR wen check
   val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
+  // wen only means the CSR unit is handling a non-jump CSR operation. It does
+  // not distinguish CSRRS/CSRRC read forms from architectural CSR writes.
+  // This RVV-local helper captures the architectural write intent used by URO
+  // vector CSR checks and vstart dirty-state updates without changing wen.
+  // Use encoded rs1/zimm, not src1 data, because rs1!=x0 with value 0 still
+  // has CSR write intent for CSRRS/CSRRC.
+  val csrRs1OrZimmIsZero = cfIn.instr(19, 15) === 0.U
+  val csrWriteIntent =
+    func === CSROpType.wrt ||  // CSRRW always writes the target CSR.
+    func === CSROpType.wrti || // CSRRWI always writes the target CSR.
+    ((
+      func === CSROpType.set ||  // CSRRS writes only when rs1 is not x0.
+      func === CSROpType.clr ||  // CSRRC writes only when rs1 is not x0.
+      func === CSROpType.seti || // CSRRSI writes only when zimm is non-zero.
+      func === CSROpType.clri    // CSRRCI writes only when zimm is non-zero.
+    ) && !csrRs1OrZimmIsZero)
+  // Vector CSRs are inaccessible when VS=Off. vl, vtype and vlenb are URO,
+  // so only true CSR write intents to them are illegal; pure reads are allowed.
+  val csrOpIsValid = valid // The CSR pipeline stage carries a real uop.
+  val csrOpNeedsAccess = CSROpType.needAccess(func) // Exclude CSR jump/system ops that do not read or write a CSR.
+  val rvvCsrAccess = addrIsRvvCsr // The addressed CSR is one of the RVV CSRs implemented in this bank.
+  val rvvVsIsOff = mstatusStruct.vs === 0.U // mstatus.VS=Off makes vector architectural state inaccessible.
+  val rvvCsrVsOffIllegal = csrOpIsValid && csrOpNeedsAccess && rvvCsrAccess && rvvVsIsOff
+  val rvvUroWriteIllegal = valid && csrWriteIntent && addrIsRvvUroCsr
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
   val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
-  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
+  val rvvCsrPermitted = !rvvCsrVsOffIllegal && !rvvUroWriteIllegal
+  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted && rvvCsrPermitted
+  // A legal CSR write to vstart modifies vector architectural state, so it
+  // dirties VS and forces younger instructions to observe the synchronized CSR state.
+  val rvvVstartWrite = if (HasRVV) {
+    wen && permitted && csrWriteIntent && addr === Vstart.U
+  } else {
+    false.B
+  }
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
   io.out.bits.data := rdata
@@ -849,10 +917,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   when (RegNext(csrio.fpu.fflags.valid)) {
     fcsr := fflags_wfn(update = true)(RegNext(csrio.fpu.fflags.bits))
   }
-  // set fs and sd in mstatus
-  when (csrw_dirty_fp_state || RegNext(csrio.fpu.dirty_fs)) {
+  // Set FS/VS dirty state and keep SD as the summary dirty bit.
+  val dirtyFpState = csrw_dirty_fp_state || RegNext(csrio.fpu.dirty_fs)
+  when (dirtyFpState || rvvVstartWrite) {
     val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
-    mstatusNew.fs := "b11".U
+    when (dirtyFpState) {
+      mstatusNew.fs := "b11".U
+    }
+    when (rvvVstartWrite) {
+      mstatusNew.vs := "b11".U
+    }
     mstatusNew.sd := true.B
     mstatus := mstatusNew.asUInt
   }
@@ -936,7 +1010,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
   val frm_change = w_fcsr_change_rm || w_frm_change_rm
   val isXRet = valid && func === CSROpType.jmp && !isEcall && !isEbreak
-  flushPipe := resetSatp || frm_change || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
+  flushPipe := resetSatp || frm_change || rvvVstartWrite || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
 
   private val illegalRetTarget = WireInit(false.B)
 
