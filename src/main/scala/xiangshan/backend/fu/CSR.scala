@@ -158,7 +158,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     val xs = Output(UInt(2.W))
     val fs = Output(UInt(2.W))
     val mpp = Output(UInt(2.W))
-    val hpp = Output(UInt(2.W))
+    val vs = Output(UInt(2.W))
     val spp = Output(UInt(1.W))
     val pie = new Priv
     val ie = new Priv
@@ -293,7 +293,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // | xs   | 00 |
   // | fs   | 01 |
   // | mpp  | 00 |
-  // | hpp  | 00 |
+  // | vs   | 00 |
   // | spp  | 0 |
   // | pie  | 0000 | pie.h is used as UBE
   // | ie   | 0000 |
@@ -301,23 +301,25 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val mstatusStruct = mstatus.asTypeOf(new MstatusStruct)
   def mstatusUpdateSideEffect(mstatus: UInt): UInt = {
     val mstatusOld = WireInit(mstatus.asTypeOf(new MstatusStruct))
-    val mstatusNew = Cat(mstatusOld.xs === "b11".U || mstatusOld.fs === "b11".U, mstatus(XLEN-2, 0))
+    val vsDirty = if (HasRVV) mstatusOld.vs === "b11".U else false.B
+    val mstatusNew = Cat(mstatusOld.xs === "b11".U || mstatusOld.fs === "b11".U || vsDirty, mstatus(XLEN-2, 0))
     mstatusNew
   }
 
+  val mstatusVsMaskedOffBits = if (HasRVV) 0.U(XLEN.W) else GenMask(10, 9)
   val mstatusWMask = (~ZeroExt((
     GenMask(XLEN - 2, 36) | // WPRI
     GenMask(35, 32)       | // SXL and UXL cannot be changed
     GenMask(31, 23)       | // WPRI
     GenMask(16, 15)       | // XS is read-only
-    GenMask(10, 9)        | // WPRI
+    mstatusVsMaskedOffBits | // VS is writable only when RVV is enabled
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
   ), 64)).asUInt
   val mstatusMask = (~ZeroExt((
     GenMask(XLEN - 2, 36) | // WPRI
     GenMask(31, 23)       | // WPRI
-    GenMask(10, 9)        | // WPRI
+    mstatusVsMaskedOffBits | // VS is visible only when RVV is enabled
     GenMask(6)            | // WPRI
     GenMask(2)              // WPRI
   ), 64)).asUInt
@@ -373,14 +375,15 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // Superviser-Level CSRs
 
   // val sstatus = RegInit(UInt(XLEN.W), "h00000000".U)
-  val sstatusWmask = "hc6133".U(XLEN.W)
+  val sstatusVsVisibleBits = if (HasRVV) GenMask(10, 9) else 0.U(XLEN.W)
+  val sstatusWmask = "hc6133".U(XLEN.W) | sstatusVsVisibleBits
   // Sstatus Write Mask
   // -------------------------------------------------------
   //    19           9   5     2
   // 0  1100 0000 0001 0010 0010
   // 0  c    0    1    2    2
   // -------------------------------------------------------
-  val sstatusRmask = sstatusWmask | "h8000000300018000".U
+  val sstatusRmask = sstatusWmask | "h8000000300018000".U | sstatusVsVisibleBits
   // Sstatus Read Mask = (SSTATUS_WMASK | (0xf << 13) | (1ull << 63) | (3ull << 32))
   // stvec: {BASE (WARL), MODE (WARL)} where mode is 0 or 1
   val stvecMask = ~(0x2.U(XLEN.W))
