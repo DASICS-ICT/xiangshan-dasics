@@ -796,6 +796,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   val addr = src2(11, 0)
   val csri = ZeroExt(src2(16, 12), XLEN)
+  val isVsetvli = CSROpType.isVsetvli(func)
+  val normalCsrOp = !isVsetvli
   val rdata = Wire(UInt(XLEN.W))
   val wdata = LookupTree(func, List(
     CSROpType.wrt  -> src1,
@@ -810,7 +812,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     (addr >= Mcountinhibit.U) && (addr <= Mhpmevent31.U) ||
     (addr >= Cycle.U) && (addr <= Hpmcounter31.U) ||
     addr === Mip.U
-  csrio.isPerfCnt := addrInPerfCnt && valid && func =/= CSROpType.jmp
+  csrio.isPerfCnt := addrInPerfCnt && valid && normalCsrOp && func =/= CSROpType.jmp
 
   val addrInDasics =  (addr >= DasicsUMainCfg.U) && (addr <= DasicsUMainBoundHi.U) || 
     (addr >= DasicsSMainCfg.U) && (addr <= DasicsSMainBoundHi.U) ||
@@ -846,7 +848,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.disableSfence := tvmNotPermit
 
   // general CSR wen check
-  val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
+  val wen = valid && normalCsrOp && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
   // wen only means the CSR unit is handling a non-jump CSR operation. It does
   // not distinguish CSRRS/CSRRC read forms from architectural CSR writes.
   // This RVV-local helper captures the architectural write intent used by URO
@@ -866,16 +868,16 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // Vector CSRs are inaccessible when VS=Off. vl, vtype and vlenb are URO,
   // so only true CSR write intents to them are illegal; pure reads are allowed.
   val csrOpIsValid = valid // The CSR pipeline stage carries a real uop.
-  val csrOpNeedsAccess = CSROpType.needAccess(func) // Exclude CSR jump/system ops that do not read or write a CSR.
+  val csrOpNeedsAccess = CSROpType.needCsrAccess(func) // Exclude CSR jump/system ops and vsetvli.
   val rvvCsrAccess = addrIsRvvCsr // The addressed CSR is one of the RVV CSRs implemented in this bank.
   val rvvVsIsOff = mstatusStruct.vs === 0.U // mstatus.VS=Off makes vector architectural state inaccessible.
   val rvvCsrVsOffIllegal = csrOpIsValid && csrOpNeedsAccess && rvvCsrAccess && rvvVsIsOff
-  val rvvUroWriteIllegal = valid && csrWriteIntent && addrIsRvvUroCsr
+  val rvvUroWriteIllegal = valid && normalCsrOp && csrWriteIntent && addrIsRvvUroCsr
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
+  val dasicsPermitted = !(csrOpNeedsAccess && addrInProtection && isUntrusted)
   val rvvCsrPermitted = !rvvCsrVsOffIllegal && !rvvUroWriteIllegal
   val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted && rvvCsrPermitted
   // A legal CSR write to vstart modifies vector architectural state, so it
@@ -989,11 +991,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // The time limit may always be 0, in which case WFI always causes
   // an illegal instruction exception in less-privileged modes when TW=1.
   val illegalWFI = valid && isWFI && privilegeMode < ModeM && mstatusStruct.tw === 1.U
+  // ADR 0006 only decodes vsetvli. ADR 0007 will define the first legal execution semantics.
+  val illegalVsetvliUnsupported = valid && isVsetvli
 
   // Illegal priviledged instruction check
-  val isIllegalAddr = valid && CSROpType.needAccess(func) && MaskedRegMap.isIllegalAddr(mapping, addr)
+  val isIllegalAddr = valid && csrOpNeedsAccess && MaskedRegMap.isIllegalAddr(mapping, addr)
   val isIllegalAccess = wen && !permitted
-  val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI
+  val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI || illegalVsetvliUnsupported
 
   // expose several csr bits for tlb
   tlbBundle.priv.mxr   := mstatusStruct.mxr.asBool

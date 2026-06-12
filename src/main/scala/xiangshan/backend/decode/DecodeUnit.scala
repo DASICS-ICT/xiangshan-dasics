@@ -441,6 +441,16 @@ object SvinvalDecode extends DecodeConstants {
    */
     )
 }
+
+/**
+ * RVV Decode constants
+ */
+object RVVDecode extends DecodeConstants {
+  def VSETVLI = BitPat("b0???????????_?????_111_?????_1010111")
+  val table: Array[(BitPat, List[BitPat])] = Array(
+    VSETVLI -> List(SrcType.reg, SrcType.X, SrcType.X, FuType.csr, CSROpType.vsetvli, Y, N, N, Y, Y, N, SelImm.X)
+  )
+}
 /*
  * CBO decode
  */
@@ -608,6 +618,7 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
 
   ctrl_flow := io.enq.ctrl_flow
 
+  val rvvDecodeTable = if (HasRVV) RVVDecode.table else Array.empty[(BitPat, List[BitPat])]
   val decode_table = XDecode.table ++
     FDecode.table ++
     FDivSqrtDecode.table ++
@@ -617,7 +628,8 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     CBODecode.table ++
     NDecode.table ++
     DasicsDecode.table ++
-    SvinvalDecode.table
+    SvinvalDecode.table ++
+    rvvDecodeTable
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
   val luiMatch = (t: Seq[BitPat]) => t(3).value == FuType.alu.litValue && t.reverse.head.value == SelImm.IMM_U.litValue
   val luiTable = decode_table.filter(t => luiMatch(t._2)).map(_._1).distinct
