@@ -499,6 +499,14 @@ class MemPredUpdateReq(implicit p: Parameters) extends XSBundle  {
   val stpc = UInt(MemPredPCWidth.W)
 }
 
+class RvvCsrStateUpdateIO(implicit p: Parameters) extends XSBundle {
+  // Coherent RVV CSR state snapshot. Consumers must update these fields together.
+  val valid = Output(Bool())
+  val vstart = Output(UInt(XLEN.W))
+  val vl = Output(UInt(XLEN.W))
+  val vtype = Output(UInt(XLEN.W))
+}
+
 class CustomCSRCtrlIO(implicit p: Parameters) extends XSBundle {
   // Prefetcher
   val l1I_pf_enable = Output(Bool())
@@ -538,6 +546,9 @@ class CustomCSRCtrlIO(implicit p: Parameters) extends XSBundle {
 
   // distribute csr write signal
   val distribute_csr = new DistributedCSRIO()
+  // RVV CSR state update signal. Unlike distribute_csr, this can be driven by
+  // vector configuration instructions that update multiple architectural CSRs.
+  val rvv_csr_update = new RvvCsrStateUpdateIO()
   
   // TODO: move it to a new bundle, since single step is not a custom control signal
   val singlestep = Output(Bool())

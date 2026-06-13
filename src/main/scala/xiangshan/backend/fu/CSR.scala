@@ -753,24 +753,31 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(Spkctl, spkctl, spkctlMask)
   )
 
+  // Reset vtype with vill=1 so the architectural state starts from an illegal vector type.
+  val rvvVtypeInit = (BigInt(1) << (XLEN - 1)).U(XLEN.W)
+  // Minimal supported vtype encoding: e32, m1, tail-agnostic, mask-agnostic.
+  val rvvVtypeE32M1Tama = 0x0D0.U(XLEN.W)
+  // vstart has enough writable bits for the largest element index, VLEN - 1.
+  val rvvVstartMask = ZeroExt(GenMask(VStartBits - 1, 0), XLEN)
+  // Only vill and the architectural low vtype bits are visible; reserved bits read as zero.
+  val rvvVtypeRmask = rvvVtypeInit | ZeroExt(GenMask(7, 0), XLEN)
+  // Architected vstart CSR state; tied off when the RVV CSR bank is disabled.
+  val rvvVstart = if (HasRVV) RegInit(0.U(XLEN.W)) else 0.U(XLEN.W)
+  // Architected vl CSR state, updated by legal vsetvli in this minimal implementation.
+  val rvvVl = if (HasRVV) RegInit(0.U(XLEN.W)) else 0.U(XLEN.W)
+  // Architected vtype CSR state; only rvvVtypeE32M1Tama is accepted by vsetvli.
+  val rvvVtype = if (HasRVV) RegInit(rvvVtypeInit) else rvvVtypeInit
+
   // Minimal RVV CSR bank. HasRVV only controls whether these CSR addresses
   // exist in the static CSR map; mstatus.VS still gates runtime accessibility.
   val rvvCsrMapping = if (HasRVV) {
-    val vstart = RegInit(0.U(XLEN.W))
-    val vl = RegInit(0.U(XLEN.W))
-    // The vector spec recommends reset with vill set and all other vtype bits clear.
-    val vtypeInit = (BigInt(1) << (XLEN - 1)).U(XLEN.W)
-    val vtype = RegInit(vtypeInit)
-    // vstart has enough writable bits for the largest element index, VLEN - 1.
-    val vstartMask = ZeroExt(GenMask(VStartBits - 1, 0), XLEN)
-    // Only vill and the architectural low vtype bits are visible; reserved bits read as zero.
-    val vtypeRmask = vtypeInit | ZeroExt(GenMask(7, 0), XLEN)
     val vlenb = VLENB.U(XLEN.W)
 
     Map(
-      MaskedRegMap(Vstart, vstart, vstartMask),
-      MaskedRegMap(Vl, vl, 0.U(XLEN.W), MaskedRegMap.Unwritable),
-      MaskedRegMap(Vtype, vtype, 0.U(XLEN.W), MaskedRegMap.Unwritable, vtypeRmask),
+      // vstart writes are arbitrated below so internal vector updates and CSR writes share one priority point.
+      MaskedRegMap(Vstart, rvvVstart, 0.U(XLEN.W), MaskedRegMap.Unwritable, rvvVstartMask),
+      MaskedRegMap(Vl, rvvVl, 0.U(XLEN.W), MaskedRegMap.Unwritable),
+      MaskedRegMap(Vtype, rvvVtype, 0.U(XLEN.W), MaskedRegMap.Unwritable, rvvVtypeRmask),
       MaskedRegMap(Vlenb, vlenb, 0.U(XLEN.W), MaskedRegMap.Unwritable)
     )
   } else {
@@ -798,6 +805,24 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val csri = ZeroExt(src2(16, 12), XLEN)
   val isVsetvli = CSROpType.isVsetvli(func)
   val normalCsrOp = !isVsetvli
+  // vsetvli vtype immediate. This minimal path accepts only rvvVtypeE32M1Tama.
+  val vsetvliZimm = cfIn.instr(30, 20)
+  // rs1=x0 selects the immediate AVL forms defined by the RVV vsetvli encoding.
+  val vsetvliRs1IsX0 = cfIn.instr(19, 15) === 0.U
+  // rd=x0 distinguishes the keep-vl form from the AVL=all-ones form.
+  val vsetvliRdIsX0 = cfIn.instr(11, 7) === 0.U
+  // rs1=x0 and rd=x0 keeps the current vl when VLMAX is unchanged.
+  val vsetvliKeepVlForm = vsetvliRs1IsX0 && vsetvliRdIsX0
+  // AVL selected by the three supported source forms: rs1 value, all-ones, or current vl.
+  val vsetvliAvl = Mux(!vsetvliRs1IsX0, src1, Mux(!vsetvliRdIsX0, Fill(XLEN, 1.U), rvvVl))
+  // VLMAX for the only supported vtype, e32/m1, derived from this core's VLEN.
+  val vsetvliVlmax = E32M1VLMAX.U(XLEN.W)
+  // New vl is min(AVL, VLMAX); the same value is written to vl and returned in rd.
+  val vsetvliNewVl = Mux(vsetvliAvl > vsetvliVlmax, vsetvliVlmax, vsetvliAvl)
+  // Reject unsupported vtype immediates instead of setting vill in the minimal execute path.
+  val vsetvliSupportedVtype = vsetvliZimm === 0x0D0.U(11.W)
+  // The keep-vl form is only valid when the current VLMAX is unchanged.
+  val vsetvliKeepVlLegal = !vsetvliKeepVlForm || rvvVtype === rvvVtypeE32M1Tama
   val rdata = Wire(UInt(XLEN.W))
   val wdata = LookupTree(func, List(
     CSROpType.wrt  -> src1,
@@ -873,6 +898,14 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val rvvVsIsOff = mstatusStruct.vs === 0.U // mstatus.VS=Off makes vector architectural state inaccessible.
   val rvvCsrVsOffIllegal = csrOpIsValid && csrOpNeedsAccess && rvvCsrAccess && rvvVsIsOff
   val rvvUroWriteIllegal = valid && normalCsrOp && csrWriteIntent && addrIsRvvUroCsr
+  // Legal execute condition for the minimal vsetvli path.
+  val rvvVsetvliLegal = if (HasRVV) {
+    isVsetvli && !rvvVsIsOff && vsetvliSupportedVtype && vsetvliKeepVlLegal
+  } else {
+    false.B
+  }
+  // Qualified write pulse for vsetvli updates to vstart, vl, and vtype.
+  val rvvVsetvliWrite = valid && rvvVsetvliLegal
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
@@ -887,9 +920,33 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   } else {
     false.B
   }
+  // Mirror MaskedRegMap's registered write timing for explicit vstart CSR writes.
+  val rvvVstartCsrWriteReg = RegNext(rvvVstartWrite, false.B)
+  val rvvVstartCsrWdataReg = RegEnable(wdata, rvvVstartWrite)
+  val rvvVstartCsrNext = MaskData(rvvVstart, rvvVstartCsrWdataReg, rvvVstartMask)
+  // Any vector architectural CSR mutation dirties VS and requires a pipe flush.
+  val rvvVectorStateWrite = rvvVstartWrite || rvvVsetvliWrite
+
+  // Broadcast the final coherent RVV CSR state for consumers with mirrored vector state.
+  val rvvCsrUpdateValid = if (HasRVV) rvvVstartCsrWriteReg || rvvVsetvliWrite else false.B
+  val rvvCsrUpdateVstart = if (HasRVV) Mux(rvvVsetvliWrite, 0.U(XLEN.W), rvvVstartCsrNext) else 0.U(XLEN.W)
+  val rvvCsrUpdateVl = if (HasRVV) Mux(rvvVsetvliWrite, vsetvliNewVl, rvvVl) else 0.U(XLEN.W)
+  val rvvCsrUpdateVtype = if (HasRVV) Mux(rvvVsetvliWrite, rvvVtypeE32M1Tama, rvvVtype) else 0.U(XLEN.W)
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
-  io.out.bits.data := rdata
+
+  if (HasRVV) {
+    when (rvvVstartCsrWriteReg) {
+      rvvVstart := rvvVstartCsrNext
+    }
+    when (rvvVsetvliWrite) {
+      rvvVstart := 0.U
+      rvvVl := vsetvliNewVl
+      rvvVtype := rvvVtypeE32M1Tama
+    }
+  }
+
+  io.out.bits.data := Mux(rvvVsetvliWrite, vsetvliNewVl, rdata)
   io.out.bits.uop := io.in.bits.uop
   io.out.bits.uop.cf := cfOut
   io.out.bits.uop.ctrl.flushPipe := flushPipe
@@ -898,6 +955,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.customCtrl.distribute_csr.w.valid := wen && permitted
   csrio.customCtrl.distribute_csr.w.bits.data := wdata
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
+  csrio.customCtrl.rvv_csr_update.valid := rvvCsrUpdateValid
+  csrio.customCtrl.rvv_csr_update.vstart := rvvCsrUpdateVstart
+  csrio.customCtrl.rvv_csr_update.vl := rvvCsrUpdateVl
+  csrio.customCtrl.rvv_csr_update.vtype := rvvCsrUpdateVtype
 
   // Fix Mip/Sip/Uip write
   val fixMapping = Map(
@@ -921,12 +982,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   }
   // Set FS/VS dirty state and keep SD as the summary dirty bit.
   val dirtyFpState = csrw_dirty_fp_state || RegNext(csrio.fpu.dirty_fs)
-  when (dirtyFpState || rvvVstartWrite) {
+  when (dirtyFpState || rvvVectorStateWrite) {
     val mstatusNew = WireInit(mstatus.asTypeOf(new MstatusStruct))
     when (dirtyFpState) {
       mstatusNew.fs := "b11".U
     }
-    when (rvvVstartWrite) {
+    when (rvvVectorStateWrite) {
       mstatusNew.vs := "b11".U
     }
     mstatusNew.sd := true.B
@@ -991,13 +1052,13 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   // The time limit may always be 0, in which case WFI always causes
   // an illegal instruction exception in less-privileged modes when TW=1.
   val illegalWFI = valid && isWFI && privilegeMode < ModeM && mstatusStruct.tw === 1.U
-  // ADR 0006 only decodes vsetvli. ADR 0007 will define the first legal execution semantics.
-  val illegalVsetvliUnsupported = valid && isVsetvli
+  // vsetvli is illegal outside the supported vtype subset or when vector state is inaccessible.
+  val illegalVsetvli = valid && isVsetvli && !rvvVsetvliLegal
 
   // Illegal priviledged instruction check
   val isIllegalAddr = valid && csrOpNeedsAccess && MaskedRegMap.isIllegalAddr(mapping, addr)
   val isIllegalAccess = wen && !permitted
-  val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI || illegalVsetvliUnsupported
+  val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI || illegalVsetvli
 
   // expose several csr bits for tlb
   tlbBundle.priv.mxr   := mstatusStruct.mxr.asBool
@@ -1014,7 +1075,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val w_frm_change_rm = wen && addr === Frm.U && wdata(2, 0) =/= fcsr(7, 5)
   val frm_change = w_fcsr_change_rm || w_frm_change_rm
   val isXRet = valid && func === CSROpType.jmp && !isEcall && !isEbreak
-  flushPipe := resetSatp || frm_change || rvvVstartWrite || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
+  flushPipe := resetSatp || frm_change || rvvVectorStateWrite || isXRet || frontendTriggerUpdate || (addrInDasics && wen)
 
   private val illegalRetTarget = WireInit(false.B)
 
