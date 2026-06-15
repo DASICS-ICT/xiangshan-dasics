@@ -348,6 +348,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   decode.io.csrCtrl := RegNext(io.csrCtrl)
   decode.io.intRat <> rat.io.intReadPorts
   decode.io.fpRat <> rat.io.fpReadPorts
+  decode.io.vecRat <> rat.io.vecReadPorts
 
   // memory dependency predict
   // when decode, send fold pc to mdp
@@ -376,6 +377,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   rat.io.robCommits := rob.io.commits
   rat.io.intRenamePorts := rename.io.intRenamePorts
   rat.io.fpRenamePorts := rename.io.fpRenamePorts
+  rat.io.vecRenamePorts := rename.io.vecRenamePorts
   rat.io.debug_int_rat <> io.debug_int_rat
   rat.io.debug_fp_rat <> io.debug_fp_rat
 
@@ -398,6 +400,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     rename.io.in(i).bits := renamePipe.bits
     rename.io.intReadPorts(i) := rat.io.intReadPorts(i).map(_.data)
     rename.io.fpReadPorts(i) := rat.io.fpReadPorts(i).map(_.data)
+    rename.io.vecReadPorts(i) := rat.io.vecReadPorts(i).map(_.data)
     rename.io.waittable(i) := RegEnable(waittable.io.rdata(i), decode.io.out(i).fire)
 
     if (i < RenameWidth - 1) {

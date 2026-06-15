@@ -107,6 +107,8 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     val intRenamePorts = Vec(RenameWidth, Input(new RatWritePort))
     val fpReadPorts = Vec(RenameWidth, Vec(4, new RatReadPort))
     val fpRenamePorts = Vec(RenameWidth, Input(new RatWritePort))
+    val vecReadPorts = Vec(RenameWidth, Vec(2, new RatReadPort(VecPhyRegIdxWidth)))
+    val vecRenamePorts = Vec(RenameWidth, Input(new RatWritePort(VecPhyRegIdxWidth)))
     // for debug printing
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
@@ -179,24 +181,28 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     }
   }
 
-  vecRat.foreach { rat =>
-    // Keep vector RAT state instantiated but inactive until vector reads,
-    // writes, commit update, and walk recovery are connected.
-    for (read <- rat.io.readPorts) {
-      read.hold := false.B
-      read.addr := 0.U
-      dontTouch(read.data)
-    }
-    for (spec <- rat.io.specWritePorts) {
-      spec.wen := false.B
-      spec.addr := 0.U
-      spec.data := 0.U
-    }
-    for (arch <- rat.io.archWritePorts) {
-      arch.wen := false.B
-      arch.addr := 0.U
-      arch.data := 0.U
-    }
-    rat.io.debug_rdata.foreach(dontTouch(_))
+  vecRat match {
+    case Some(rat) =>
+      rat.io.readPorts <> io.vecReadPorts.flatten
+      for ((arch, i) <- rat.io.archWritePorts.zipWithIndex) {
+        arch.wen := io.robCommits.isCommit && io.robCommits.commitValid(i) && io.robCommits.info(i).vecWen
+        arch.addr := io.robCommits.info(i).vdestArch
+        arch.data := io.robCommits.info(i).vpdest
+      }
+      for ((spec, i) <- rat.io.specWritePorts.zipWithIndex) {
+        spec.wen := io.robCommits.isWalk && io.robCommits.walkValid(i) && io.robCommits.info(i).vecWen
+        spec.addr := io.robCommits.info(i).vdestArch
+        spec.data := io.robCommits.info(i).vold_pdest
+      }
+      for ((spec, rename) <- rat.io.specWritePorts.zip(io.vecRenamePorts)) {
+        when (rename.wen) {
+          spec.wen := true.B
+          spec.addr := rename.addr
+          spec.data := rename.data
+        }
+      }
+      rat.io.debug_rdata.foreach(dontTouch(_))
+    case None =>
+      io.vecReadPorts.flatten.foreach(_.data := 0.U)
   }
 }

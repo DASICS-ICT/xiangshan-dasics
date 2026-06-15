@@ -33,6 +33,7 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents {
     // RAT read
     val intRat = Vec(RenameWidth, Vec(3, Flipped(new RatReadPort)))
     val fpRat = Vec(RenameWidth, Vec(4, Flipped(new RatReadPort)))
+    val vecRat = Vec(RenameWidth, Vec(2, Flipped(new RatReadPort(VecPhyRegIdxWidth))))
     // csr control
     val csrCtrl = Input(new CustomCSRCtrlIO)
     // perf only
@@ -63,6 +64,10 @@ class DecodeStage(implicit p: Parameters) extends XSModule with HasPerfEvents {
     io.fpRat(i)(2).addr := decoders(i).io.deq.cf_ctrl.ctrl.lsrc(2)
     io.fpRat(i)(3).addr := decoders(i).io.deq.cf_ctrl.ctrl.ldest
     io.fpRat(i).foreach(_.hold := !io.out(i).ready)
+
+    io.vecRat(i)(0).addr := decoders(i).io.deq.cf_ctrl.ctrl.vsrcArch
+    io.vecRat(i)(1).addr := decoders(i).io.deq.cf_ctrl.ctrl.vdestArch
+    io.vecRat(i).foreach(_.hold := !io.out(i).ready)
   }
 
   val hasValid = VecInit(io.in.map(_.valid)).asUInt.orR
