@@ -55,7 +55,7 @@ class SimRegfile (
   dataWidth: Int
 )(implicit p: Parameters) extends BaseRegfile(numReadPorts, numWritePorts, hasZero, numEntries, dataWidth) {
 
-  val mem = Mem(NRPhyRegs, UInt(dataWidth.W))
+  val mem = Mem(numEntries, UInt(dataWidth.W))
   for (r <- io.readPorts) {
     val rdata = if (hasZero) Mux(r.addr === 0.U, 0.U, mem(r.addr)) else mem(r.addr)
     r.data := RegNext(rdata)

@@ -347,6 +347,23 @@ class ExuInput(implicit p: Parameters) extends XSBundle {
   val src = Vec(3, UInt(XLEN.W))
 }
 
+class VectorRfReadPort(implicit p: Parameters) extends XSBundle {
+  val addr = Input(UInt(VecPhyRegIdxWidth.W))
+  val data = Output(UInt(VLEN.W))
+}
+
+class VectorRfWritePort(implicit p: Parameters) extends XSBundle {
+  val wen = Input(Bool())
+  val addr = Input(UInt(VecPhyRegIdxWidth.W))
+  val data = Input(UInt(VLEN.W))
+}
+
+class VectorWriteback(implicit p: Parameters) extends XSBundle {
+  val uop = new MicroOp
+  val vpdest = UInt(VecPhyRegIdxWidth.W)
+  val data = UInt(VLEN.W)
+}
+
 class ExuOutput(implicit p: Parameters) extends XSBundle {
   val uop = new MicroOp
   val data = UInt(XLEN.W)
