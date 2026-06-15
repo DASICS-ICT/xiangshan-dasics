@@ -161,10 +161,14 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   val srcType = Vec(3, SrcType())
   val lsrc = Vec(3, UInt(5.W))
   val ldest = UInt(5.W)
+  val vsrcArch = UInt(5.W)
+  val vdestArch = UInt(5.W)
   val fuType = FuType()
   val fuOpType = FuOpType()
   val rfWen = Bool()
   val fpWen = Bool()
+  val vecWen = Bool()
+  val vsrcValid = Bool()
   val isXSTrap = Bool()
   val noSpecExec = Bool() // wait forward
   val blockBackward = Bool() // block backward
@@ -182,15 +186,24 @@ class CtrlSignals(implicit p: Parameters) extends XSBundle {
   private def allSignals = srcType ++ Seq(fuType, fuOpType, rfWen, fpWen,
     isXSTrap, noSpecExec, blockBackward, flushPipe, selImm)
 
+  private def clearVectorRenameMetadata(): Unit = {
+    vecWen := false.B
+    vsrcValid := false.B
+    vsrcArch := 0.U
+    vdestArch := 0.U
+  }
+
   def decode(inst: UInt, table: Iterable[(BitPat, List[BitPat])]): CtrlSignals = {
     val decoder = freechips.rocketchip.rocket.DecodeLogic(inst, XDecode.decodeDefault, table)
     allSignals zip decoder foreach { case (s, d) => s := d }
     commitType := DontCare
+    clearVectorRenameMetadata()
     this
   }
 
   def decode(bit: List[BitPat]): CtrlSignals = {
     allSignals.zip(bit.map(bitPatToUInt(_))).foreach{ case (s, d) => s := d }
+    clearVectorRenameMetadata()
     this
   }
 
@@ -230,6 +243,9 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val psrc = Vec(3, UInt(PhyRegIdxWidth.W))
   val pdest = UInt(PhyRegIdxWidth.W)
   val old_pdest = UInt(PhyRegIdxWidth.W)
+  val vpsrc = UInt(VecPhyRegIdxWidth.W)
+  val vpdest = UInt(VecPhyRegIdxWidth.W)
+  val vold_pdest = UInt(VecPhyRegIdxWidth.W)
   val robIdx = new RobPtr
   val lqIdx = new LqPtr
   val sqIdx = new SqPtr
@@ -367,10 +383,14 @@ class RobDispatchData(implicit p: Parameters) extends XSBundle {
   val ldest = UInt(5.W)
   val rfWen = Bool()
   val fpWen = Bool()
+  val vecWen = Bool()
   val wflags = Bool()
   val commitType = CommitType()
   val pdest = UInt(PhyRegIdxWidth.W)
   val old_pdest = UInt(PhyRegIdxWidth.W)
+  val vdestArch = UInt(5.W)
+  val vpdest = UInt(VecPhyRegIdxWidth.W)
+  val vold_pdest = UInt(VecPhyRegIdxWidth.W)
   val ftqIdx = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
 }
@@ -383,10 +403,14 @@ class RobCommitInfo(implicit p: Parameters) extends RobDispatchData {
     ldest := data.ldest
     rfWen := data.rfWen
     fpWen := data.fpWen
+    vecWen := data.vecWen
     wflags := data.wflags
     commitType := data.commitType
     pdest := data.pdest
     old_pdest := data.old_pdest
+    vdestArch := data.vdestArch
+    vpdest := data.vpdest
+    vold_pdest := data.vold_pdest
     ftqIdx := data.ftqIdx
     ftqOffset := data.ftqOffset
   }
