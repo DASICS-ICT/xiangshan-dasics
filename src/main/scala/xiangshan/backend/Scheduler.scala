@@ -27,7 +27,7 @@ import xiangshan.backend.dispatch.Dispatch2Rs
 import xiangshan.backend.exu.ExuConfig
 import xiangshan.backend.fu.fpu.FMAMidResultIO
 import xiangshan.backend.issue.ReservationStationWrapper
-import xiangshan.backend.regfile.{Regfile, RfReadPort}
+import xiangshan.backend.regfile.{Regfile, RfReadPort, VectorRegfile}
 import xiangshan.backend.rename.{BusyTable, BusyTableReadIO}
 import xiangshan.mem.{LsqEnqCtrl, LsqEnqIO, MemWaitUpdateReq, SqPtr}
 
@@ -206,6 +206,7 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
   val fpRfWritePorts = outer.numFpRfWritePorts
   val intRfConfig = (outer.numIntRfReadPorts > 0 && outer.hasIntRf, outer.numIntRfReadPorts, intRfWritePorts)
   val fpRfConfig = (outer.numFpRfReadPorts > 0 && outer.hasFpRf, outer.numFpRfReadPorts, fpRfWritePorts)
+  val hasVecRf = HasRVV && outer.hasIntRf
 
   val rs_all = outer.reservationStations
 
@@ -246,6 +247,8 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
     val fpStateReadIn = if (!outer.hasFpRf && outer.numFpRfReadPorts > 0) Some(Vec(outer.numFpRfReadPorts, Flipped(new BusyTableReadIO))) else None
     val fpRfReadOut = if (outer.outFpRfReadPorts > 0) Some(Vec(outer.outFpRfReadPorts, new RfReadPort(NRPhyRegs, XLEN))) else None
     val fpStateReadOut = if (outer.outFpRfReadPorts > 0) Some(Vec(outer.outFpRfReadPorts, new BusyTableReadIO)) else None
+    val vecRfRead = if (hasVecRf) Some(new VectorRfReadPort) else None
+    val vecRfWrite = if (hasVecRf) Some(new VectorRfWritePort) else None
     val loadFastMatch = if (numLoadPorts > 0) Some(Vec(numLoadPorts, Output(UInt(exuParameters.LduCnt.W)))) else None
     val loadFastImm = if (numLoadPorts > 0) Some(Vec(numLoadPorts, Output(UInt(12.W)))) else None
     // misc
@@ -376,6 +379,17 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
 
   val intRfReadData = if (intRfConfig._1) genRegfile(true) else io.extra.intRfReadIn.getOrElse(Seq()).map(_.data)
   val fpRfReadData = if (fpRfConfig._1) genRegfile(false) else DelayN(VecInit(io.extra.fpRfReadIn.getOrElse(Seq()).map(_.data)), 1)
+
+  if (hasVecRf) {
+    val vecRf = Module(new VectorRegfile)
+    vecRf.io.read.valid := io.extra.vecRfRead.get.valid
+    vecRf.io.read.addr := io.extra.vecRfRead.get.addr
+    io.extra.vecRfRead.get.respValid := vecRf.io.read.respValid
+    io.extra.vecRfRead.get.data := vecRf.io.read.data
+    vecRf.io.write.wen := io.extra.vecRfWrite.get.wen
+    vecRf.io.write.addr := io.extra.vecRfWrite.get.addr
+    vecRf.io.write.data := io.extra.vecRfWrite.get.data
+  }
 
   if (io.extra.intRfReadIn.isDefined) {
     io.extra.intRfReadIn.get.map(_.addr).zip(readIntRf).foreach{ case (r, addr) => r := addr}

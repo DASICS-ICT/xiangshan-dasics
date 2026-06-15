@@ -348,7 +348,9 @@ class ExuInput(implicit p: Parameters) extends XSBundle {
 }
 
 class VectorRfReadPort(implicit p: Parameters) extends XSBundle {
+  val valid = Input(Bool())
   val addr = Input(UInt(VecPhyRegIdxWidth.W))
+  val respValid = Output(Bool())
   val data = Output(UInt(VLEN.W))
 }
 

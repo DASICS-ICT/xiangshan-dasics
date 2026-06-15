@@ -347,6 +347,15 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
     exu.allocPregs <> ctrlBlock.io.allocPregs
     exu.rfWriteback <> rfWriteback
     exu.fastUopIn <> allFastUop1
+    if (exu.scheExtra.vecRfRead.isDefined) {
+      exu.scheExtra.vecRfRead.get.valid := false.B
+      exu.scheExtra.vecRfRead.get.addr := 0.U
+    }
+    if (exu.scheExtra.vecRfWrite.isDefined) {
+      exu.scheExtra.vecRfWrite.get.wen := false.B
+      exu.scheExtra.vecRfWrite.get.addr := 0.U
+      exu.scheExtra.vecRfWrite.get.data := 0.U
+    }
     exu.scheExtra.jumpPc <> ctrlBlock.io.jumpPc
     exu.scheExtra.jalr_target <> ctrlBlock.io.jalr_target
     exu.scheExtra.stIssuePtr <> memBlock.io.stIssuePtr

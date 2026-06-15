@@ -51,6 +51,8 @@ case class XSCoreParameters
   // Architectural vector register width in bits. RVV CSR constants and
   // first-stage VLMAX values are derived from this single source.
   VLEN: Int = 128,
+  // Total cycles from a vector RF read request to its response.
+  VecRfReadLatency: Int = 1,
   HasDiv: Boolean = true,
   HasICache: Boolean = true,
   HasDCache: Boolean = true,
@@ -249,6 +251,7 @@ case class XSCoreParameters
 ){
   require(VLEN >= 32 && VLEN <= 65536 && (VLEN & (VLEN - 1)) == 0,
     "VLEN must be a power of two between 32 and 65536")
+  require(VecRfReadLatency >= 1, s"VecRfReadLatency must be at least 1 cycle, got $VecRfReadLatency")
 
   val allHistLens = SCHistLens ++ ITTageTableInfos.map(_._2) ++ TageTableInfos.map(_._2) :+ UbtbGHRLength
   val HistoryLength = allHistLens.max + numBr * FtqSize + 9 // 256 for the predictor configs now
@@ -298,6 +301,7 @@ trait HasXSParameter {
   val HasDasics = coreParams.HasDasics
   val HasRVV = coreParams.HasRVV
   val VLEN = coreParams.VLEN
+  val VecRfReadLatency = coreParams.VecRfReadLatency
   // vlenb is architectural VLEN in bytes. vstart needs enough bits to encode
   // the largest possible element index, which is VLEN - 1 when LMUL=8 and SEW=8.
   val VLENB = VLEN / 8
