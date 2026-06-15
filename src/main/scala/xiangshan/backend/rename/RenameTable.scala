@@ -22,28 +22,42 @@ import chisel3.util._
 import utils.{ParallelPriorityMux, XSError}
 import xiangshan._
 
-class RatReadPort(implicit p: Parameters) extends XSBundle {
+class RatReadPort(val dataWidth: Int = -1)(implicit p: Parameters) extends XSBundle {
+  private val phyRegIdxWidth = if (dataWidth < 0) PhyRegIdxWidth else dataWidth
+
   val hold = Input(Bool())
   val addr = Input(UInt(5.W))
-  val data = Output(UInt(PhyRegIdxWidth.W))
+  val data = Output(UInt(phyRegIdxWidth.W))
 }
 
-class RatWritePort(implicit p: Parameters) extends XSBundle {
+class RatWritePort(val dataWidth: Int = -1)(implicit p: Parameters) extends XSBundle {
+  private val phyRegIdxWidth = if (dataWidth < 0) PhyRegIdxWidth else dataWidth
+
   val wen = Bool()
   val addr = UInt(5.W)
-  val data = UInt(PhyRegIdxWidth.W)
+  val data = UInt(phyRegIdxWidth.W)
 }
 
-class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule {
+class RenameTable(
+  numReadPorts: Int,
+  numArchRegs: Int,
+  phyRegIdxWidth: Int,
+  initMapping: Seq[Int]
+)(implicit p: Parameters) extends XSModule {
+  require(numArchRegs > 0, "rename table needs at least one architectural register")
+  require(initMapping.length == numArchRegs, "rename table reset mapping must cover every architectural register")
+  require(initMapping.forall(i => i >= 0 && BigInt(i) < (BigInt(1) << phyRegIdxWidth)),
+    "rename table reset mapping exceeds physical register id width")
+
   val io = IO(new Bundle {
-    val readPorts = Vec({if(float) 4 else 3} * RenameWidth, new RatReadPort)
-    val specWritePorts = Vec(CommitWidth, Input(new RatWritePort))
-    val archWritePorts = Vec(CommitWidth, Input(new RatWritePort))
-    val debug_rdata = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
+    val readPorts = Vec(numReadPorts, new RatReadPort(phyRegIdxWidth))
+    val specWritePorts = Vec(CommitWidth, Input(new RatWritePort(phyRegIdxWidth)))
+    val archWritePorts = Vec(CommitWidth, Input(new RatWritePort(phyRegIdxWidth)))
+    val debug_rdata = Vec(numArchRegs, Output(UInt(phyRegIdxWidth.W)))
   })
 
   // speculative rename table
-  val rename_table_init = VecInit.tabulate(32)(i => (if (float) i else 0).U(PhyRegIdxWidth.W))
+  val rename_table_init = VecInit(initMapping.map(_.U(phyRegIdxWidth.W)))
   val spec_table = RegInit(rename_table_init)
   val spec_table_next = WireInit(spec_table)
   // arch state rename table
@@ -59,7 +73,7 @@ class RenameTable(float: Boolean)(implicit p: Parameters) extends XSModule {
   val t1_wSpec = RegNext(io.specWritePorts)
 
   // WRITE: when instruction commits or walking
-  val t1_wSpec_addr = t1_wSpec.map(w => Mux(w.wen, UIntToOH(w.addr), 0.U))
+  val t1_wSpec_addr = t1_wSpec.map(w => Mux(w.wen, UIntToOH(w.addr, numArchRegs), 0.U(numArchRegs.W)))
   for ((next, i) <- spec_table_next.zipWithIndex) {
     val matchVec = t1_wSpec_addr.map(w => w(i))
     val wMatch = ParallelPriorityMux(matchVec.reverse, t1_wSpec.map(_.data).reverse)
@@ -98,8 +112,18 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
   })
 
-  val intRat = Module(new RenameTable(float = false))
-  val fpRat = Module(new RenameTable(float = true))
+  val intRat = Module(new RenameTable(
+    numReadPorts = 3 * RenameWidth,
+    numArchRegs = 32,
+    phyRegIdxWidth = PhyRegIdxWidth,
+    initMapping = Seq.fill(32)(0)
+  ))
+  val fpRat = Module(new RenameTable(
+    numReadPorts = 4 * RenameWidth,
+    numArchRegs = 32,
+    phyRegIdxWidth = PhyRegIdxWidth,
+    initMapping = Seq.tabulate(32)(identity)
+  ))
 
   intRat.io.debug_rdata <> io.debug_int_rat
   intRat.io.readPorts <> io.intReadPorts.flatten

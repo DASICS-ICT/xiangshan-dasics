@@ -22,25 +22,39 @@ import chisel3.util._
 import xiangshan._
 import utils._
 
-class BusyTableReadIO(implicit p: Parameters) extends XSBundle {
-  val req = Input(UInt(PhyRegIdxWidth.W))
+class BusyTableReadIO(val dataWidth: Int = -1)(implicit p: Parameters) extends XSBundle {
+  private val phyRegIdxWidth = if (dataWidth < 0) PhyRegIdxWidth else dataWidth
+
+  val req = Input(UInt(phyRegIdxWidth.W))
   val resp = Output(Bool())
 }
 
-class BusyTable(numReadPorts: Int, numWritePorts: Int)(implicit p: Parameters) extends XSModule with HasPerfEvents {
+class BusyTable(
+  numReadPorts: Int,
+  numWritePorts: Int,
+  numPhyRegsParam: Int = -1,
+  phyRegIdxWidthParam: Int = -1,
+  perfPrefix: String = "std_freelist"
+)(implicit p: Parameters) extends XSModule with HasPerfEvents {
+  private val numPhyRegs = if (numPhyRegsParam < 0) NRPhyRegs else numPhyRegsParam
+  private val phyRegIdxWidth = if (phyRegIdxWidthParam < 0) PhyRegIdxWidth else phyRegIdxWidthParam
+
+  require(numPhyRegs > 0, "busy table needs at least one physical register")
+  require(phyRegIdxWidth > 0, "physical register id width must be positive")
+
   val io = IO(new Bundle() {
     // set preg state to busy
-    val allocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
+    val allocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(phyRegIdxWidth.W))))
     // set preg state to ready (write back regfile + rob walk)
-    val wbPregs = Vec(numWritePorts, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
+    val wbPregs = Vec(numWritePorts, Flipped(ValidIO(UInt(phyRegIdxWidth.W))))
     // read preg state
-    val read = Vec(numReadPorts, new BusyTableReadIO)
+    val read = Vec(numReadPorts, new BusyTableReadIO(phyRegIdxWidth))
   })
 
-  val table = RegInit(0.U(NRPhyRegs.W))
+  val table = RegInit(0.U(numPhyRegs.W))
 
   def reqVecToMask(rVec: Vec[Valid[UInt]]): UInt = {
-    ParallelOR(rVec.map(v => Mux(v.valid, UIntToOH(v.bits), 0.U)))
+    ParallelOR(rVec.map(v => Mux(v.valid, UIntToOH(v.bits, numPhyRegs), 0.U(numPhyRegs.W))))
   }
 
   val wbMask = reqVecToMask(io.wbPregs)
@@ -61,17 +75,17 @@ class BusyTable(numReadPorts: Int, numWritePorts: Int)(implicit p: Parameters) e
   XSDebug(p"tableNext: ${Binary(tableAfterAlloc)}\n")
   XSDebug(p"allocMask: ${Binary(allocMask)}\n")
   XSDebug(p"wbMask   : ${Binary(wbMask)}\n")
-  for (i <- 0 until NRPhyRegs) {
+  for (i <- 0 until numPhyRegs) {
     XSDebug(table(i), "%d is busy\n", i.U)
   }
 
   XSPerfAccumulate("busy_count", PopCount(table))
 
   val perfEvents = Seq(
-    ("std_freelist_1_4_valid", busyCount < (NRPhyRegs / 4).U                                      ),
-    ("std_freelist_2_4_valid", busyCount > (NRPhyRegs / 4).U && busyCount <= (NRPhyRegs / 2).U    ),
-    ("std_freelist_3_4_valid", busyCount > (NRPhyRegs / 2).U && busyCount <= (NRPhyRegs * 3 / 4).U),
-    ("std_freelist_4_4_valid", busyCount > (NRPhyRegs * 3 / 4).U                                  )
+    (s"${perfPrefix}_1_4_valid", busyCount < (numPhyRegs / 4).U                                      ),
+    (s"${perfPrefix}_2_4_valid", busyCount > (numPhyRegs / 4).U && busyCount <= (numPhyRegs / 2).U    ),
+    (s"${perfPrefix}_3_4_valid", busyCount > (numPhyRegs / 2).U && busyCount <= (numPhyRegs * 3 / 4).U),
+    (s"${perfPrefix}_4_4_valid", busyCount > (numPhyRegs * 3 / 4).U                                  )
   )
   generatePerfEvent()
 }

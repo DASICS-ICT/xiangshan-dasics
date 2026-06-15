@@ -23,18 +23,26 @@ import xiangshan._
 import utils._
 
 
-abstract class BaseFreeList(size: Int)(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper {
+abstract class BaseFreeList(
+  size: Int,
+  phyRegIdxWidthParam: Int = -1
+)(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelper {
+  protected val phyRegIdxWidth = if (phyRegIdxWidthParam < 0) PhyRegIdxWidth else phyRegIdxWidthParam
+
+  require(size > 0, "free list needs at least one entry")
+  require(phyRegIdxWidth > 0, "physical register id width must be positive")
+
   val io = IO(new Bundle {
     val redirect = Input(Bool())
     val walk = Input(Bool())
 
     val allocateReq = Input(Vec(RenameWidth, Bool()))
-    val allocatePhyReg = Output(Vec(RenameWidth, UInt(PhyRegIdxWidth.W)))
+    val allocatePhyReg = Output(Vec(RenameWidth, UInt(phyRegIdxWidth.W)))
     val canAllocate = Output(Bool())
     val doAllocate = Input(Bool())
 
     val freeReq = Input(Vec(CommitWidth, Bool()))
-    val freePhyReg = Input(Vec(CommitWidth, UInt(PhyRegIdxWidth.W)))
+    val freePhyReg = Input(Vec(CommitWidth, UInt(phyRegIdxWidth.W)))
 
     val stepBack = Input(UInt(log2Up(CommitWidth + 1).W))
   })

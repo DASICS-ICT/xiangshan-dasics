@@ -23,9 +23,18 @@ import xiangshan._
 import utils._
 
 
-class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) with HasPerfEvents {
+class StdFreeList(
+  size: Int,
+  phyRegIdxWidthParam: Int = -1,
+  initOffset: Int = 32,
+  perfPrefix: String = "std_freelist"
+)(implicit p: Parameters) extends BaseFreeList(size, phyRegIdxWidthParam) with HasPerfEvents {
+  require(initOffset >= 0, "free list initial physical register offset must be non-negative")
+  require(BigInt(initOffset + size - 1) < (BigInt(1) << phyRegIdxWidth),
+    "free list initial physical register ids exceed physical register id width")
 
-  val freeList = RegInit(VecInit(Seq.tabulate(size)( i => (i + 32).U(PhyRegIdxWidth.W) )))
+  // Initial entries are contiguous physical register ids after the architectural register window.
+  val freeList = RegInit(VecInit(Seq.tabulate(size)( i => (i + initOffset).U(phyRegIdxWidth.W) )))
   val headPtr  = RegInit(FreeListPtr(false, 0))
   val headPtrOH = RegInit(1.U(size.W))
   val headPtrOHShift = CircularShift(headPtrOH)
@@ -106,10 +115,10 @@ class StdFreeList(size: Int)(implicit p: Parameters) extends BaseFreeList(size) 
 
   val freeRegCntReg = RegNext(freeRegCnt)
   val perfEvents = Seq(
-    ("std_freelist_1_4_valid", freeRegCntReg <  (size / 4).U                                    ),
-    ("std_freelist_2_4_valid", freeRegCntReg >= (size / 4).U && freeRegCntReg < (size / 2).U    ),
-    ("std_freelist_3_4_valid", freeRegCntReg >= (size / 2).U && freeRegCntReg < (size * 3 / 4).U),
-    ("std_freelist_4_4_valid", freeRegCntReg >= (size * 3 / 4).U                                )
+    (s"${perfPrefix}_1_4_valid", freeRegCntReg <  (size / 4).U                                    ),
+    (s"${perfPrefix}_2_4_valid", freeRegCntReg >= (size / 4).U && freeRegCntReg < (size / 2).U    ),
+    (s"${perfPrefix}_3_4_valid", freeRegCntReg >= (size / 2).U && freeRegCntReg < (size * 3 / 4).U),
+    (s"${perfPrefix}_4_4_valid", freeRegCntReg >= (size * 3 / 4).U                                )
   )
   generatePerfEvent()
 }
