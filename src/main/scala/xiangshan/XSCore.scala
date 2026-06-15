@@ -300,6 +300,10 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   ctrlBlock.io.exuRedirect <> redirectBlocks.flatMap(_.io.fuExtra.exuRedirect)
   ctrlBlock.io.stIn <> memBlock.io.stIn
   ctrlBlock.io.memoryViolation <> memBlock.io.memoryViolation
+  if (ctrlBlock.io.vecWriteback.isDefined) {
+    ctrlBlock.io.vecWriteback.get.valid := false.B
+    ctrlBlock.io.vecWriteback.get.bits := 0.U.asTypeOf(new VectorWriteback)
+  }
   exuBlocks.head.io.scheExtra.enqLsq.get <> memBlock.io.enqLsq
   exuBlocks.foreach(b => {
     b.io.scheExtra.lcommit := ctrlBlock.io.robio.lsq.lcommit

@@ -44,6 +44,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
     val fpRenamePorts = Vec(RenameWidth, Output(new RatWritePort))
     val vecReadPorts = Vec(RenameWidth, Vec(2, Input(UInt(VecPhyRegIdxWidth.W))))
     val vecRenamePorts = Vec(RenameWidth, Output(new RatWritePort(VecPhyRegIdxWidth)))
+    val vecWbPreg = if (HasRVV) Some(Flipped(ValidIO(UInt(VecPhyRegIdxWidth.W)))) else None
     // to dispatch1
     val out = Vec(RenameWidth, DecoupledIO(new MicroOp))
   })
@@ -330,10 +331,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
       preg.valid := vecSpecWen(i)
       preg.bits := io.out(i).bits.vpdest
     }
-    busyTable.io.wbPregs.foreach { preg =>
-      preg.valid := false.B
-      preg.bits := 0.U
-    }
+    busyTable.io.wbPregs(0) <> io.vecWbPreg.get
     busyTable.io.read.zipWithIndex.foreach { case (read, i) =>
       read.req := Mux(needVectorSource(io.out(i).bits), io.out(i).bits.vpsrc, 0.U)
       dontTouch(read.resp)

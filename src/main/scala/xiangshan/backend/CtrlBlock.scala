@@ -224,6 +224,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
       }
     })
     val writeback = MixedVec(writebackLengths.map(num => Vec(num, Flipped(ValidIO(new ExuOutput)))))
+    val vecWriteback = if (HasRVV) Some(Flipped(ValidIO(new VectorWriteback))) else None
     // redirect out
     val redirect = ValidIO(new Redirect)
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
@@ -280,6 +281,16 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   val stage2Redirect = Mux(flushRedirect.valid, flushRedirect, redirectGen.io.stage2Redirect)
   // Redirect will be RegNext at ExuBlocks.
   val redirectForExu = RegNextWithEnable(stage2Redirect)
+
+  val vecWbPreg = Wire(ValidIO(UInt(VecPhyRegIdxWidth.W)))
+  vecWbPreg.valid := false.B
+  vecWbPreg.bits := 0.U
+  if (HasRVV) {
+    val vecWb = io.vecWriteback.get
+    val killedByRedirect = vecWb.bits.uop.robIdx.needFlush(Seq(stage2Redirect, redirectForExu))
+    vecWbPreg.valid := vecWb.valid && !killedByRedirect
+    vecWbPreg.bits := vecWb.bits.vpdest
+  }
 
   val exuRedirect = io.exuRedirect.map(x => {
     val valid = x.valid && x.bits.redirectValid
@@ -429,6 +440,9 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   rename.io.redirect <> stage2Redirect
   rename.io.robCommits <> rob.io.commits
+  if (HasRVV) {
+    rename.io.vecWbPreg.get <> vecWbPreg
+  }
   rename.io.ssit <> ssit.io.rdata
 
   // pipeline between rename and dispatch
