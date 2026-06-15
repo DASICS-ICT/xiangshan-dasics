@@ -124,6 +124,16 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     phyRegIdxWidth = PhyRegIdxWidth,
     initMapping = Seq.tabulate(32)(identity)
   ))
+  val vecRat = if (HasRVV) {
+    Some(Module(new RenameTable(
+      numReadPorts = 2 * RenameWidth,
+      numArchRegs = NRVecArchRegs,
+      phyRegIdxWidth = VecPhyRegIdxWidth,
+      initMapping = Seq.tabulate(NRVecArchRegs)(identity)
+    )))
+  } else {
+    None
+  }
 
   intRat.io.debug_rdata <> io.debug_int_rat
   intRat.io.readPorts <> io.intReadPorts.flatten
@@ -169,4 +179,24 @@ class RenameTableWrapper(implicit p: Parameters) extends XSModule {
     }
   }
 
+  vecRat.foreach { rat =>
+    // Keep vector RAT state instantiated but inactive until vector reads,
+    // writes, commit update, and walk recovery are connected.
+    for (read <- rat.io.readPorts) {
+      read.hold := false.B
+      read.addr := 0.U
+      dontTouch(read.data)
+    }
+    for (spec <- rat.io.specWritePorts) {
+      spec.wen := false.B
+      spec.addr := 0.U
+      spec.data := 0.U
+    }
+    for (arch <- rat.io.archWritePorts) {
+      arch.wen := false.B
+      arch.addr := 0.U
+      arch.data := 0.U
+    }
+    rat.io.debug_rdata.foreach(dontTouch(_))
+  }
 }

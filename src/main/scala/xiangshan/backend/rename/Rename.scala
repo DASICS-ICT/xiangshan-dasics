@@ -50,6 +50,57 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents {
   val intFreeList = Module(new MEFreeList(NRPhyRegs))
   val intRefCounter = Module(new RefCounter(NRPhyRegs))
   val fpFreeList = Module(new StdFreeList(NRPhyRegs - 32))
+  val vecFreeList = if (HasRVV) {
+    Some(Module(new StdFreeList(
+      size = NRVecPhyRegs - NRVecArchRegs,
+      phyRegIdxWidthParam = VecPhyRegIdxWidth,
+      initOffset = NRVecArchRegs,
+      perfPrefix = "vector_freelist"
+    )))
+  } else {
+    None
+  }
+  val vecBusyTable = if (HasRVV) {
+    Some(Module(new BusyTable(
+      numReadPorts = RenameWidth,
+      numWritePorts = 1,
+      numPhyRegsParam = NRVecPhyRegs,
+      phyRegIdxWidthParam = VecPhyRegIdxWidth,
+      perfPrefix = "vector_busy_table"
+    )))
+  } else {
+    None
+  }
+
+  vecFreeList.foreach { freeList =>
+    // Keep vector free-list state instantiated but inactive until vector
+    // allocation, release, walk recovery, and backpressure are connected.
+    freeList.io.redirect := io.redirect.valid
+    freeList.io.walk := false.B
+    freeList.io.allocateReq.foreach(_ := false.B)
+    freeList.io.doAllocate := false.B
+    freeList.io.freeReq.foreach(_ := false.B)
+    freeList.io.freePhyReg.foreach(_ := 0.U)
+    freeList.io.stepBack := 0.U
+    freeList.io.allocatePhyReg.foreach(dontTouch(_))
+    dontTouch(freeList.io.canAllocate)
+  }
+
+  vecBusyTable.foreach { busyTable =>
+    // Vector allocation and writeback producers are connected with vector rename.
+    busyTable.io.allocPregs.foreach { preg =>
+      preg.valid := false.B
+      preg.bits := 0.U
+    }
+    busyTable.io.wbPregs.foreach { preg =>
+      preg.valid := false.B
+      preg.bits := 0.U
+    }
+    busyTable.io.read.foreach { read =>
+      read.req := 0.U
+      dontTouch(read.resp)
+    }
+  }
 
   // decide if given instruction needs allocating a new physical register (CfCtrl: from decode; RobCommitInfo: from rob)
   def needDestReg[T <: CfCtrl](fp: Boolean, x: T): Bool = {
