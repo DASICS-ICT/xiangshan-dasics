@@ -251,8 +251,8 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     dtlb_st.foreach(_.ptw.resp.valid := ptw_resp_v && Cat(ptw_resp_next.vector.drop(ld_tlb_ports)).orR)
   }
 
-  val memDasicsReq  = storeUnits.map(_.io.dasicsReq) ++ loadUnits.map(_.io.dasicsReq)
-  val memDasicsResp = storeUnits.map(_.io.dasicsResp) ++ loadUnits.map(_.io.dasicsResp)
+  val memDasicsReq  = storeUnits.map(_.io.dasicsReq) ++ loadUnits.map(_.io.dasicsReq) :+ atomicsUnit.io.dasicsReq
+  val memDasicsResp = storeUnits.map(_.io.dasicsResp) ++ loadUnits.map(_.io.dasicsResp) :+ atomicsUnit.io.dasicsResp
 
   memDasicsResp.map{resp =>
     resp.mode := tlbcsr_dup.last.priv.dmode
@@ -264,7 +264,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     val dasics = Module(new MemDasics())
     dasics.io.distribute_csr <> csrCtrl.distribute_csr
   
-    val dasics_checkers = VecInit(Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt)(
+    val dasics_checkers = VecInit(Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt + 1)(
       Module(new DasicsMemChecker()).io
     )) //TODO: general Dasics check port config
 

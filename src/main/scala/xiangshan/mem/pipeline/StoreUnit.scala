@@ -104,6 +104,7 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   val is_mmio_cbo = io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_clean ||
     io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_flush ||
     io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_inval
+  val is_cbo = is_mmio_cbo || io.in.bits.uop.ctrl.fuOpType === LSUOpType.cbo_zero
 
   val s1_paddr = io.dtlbResp.bits.paddr(0)
   val s1_tlb_miss = io.dtlbResp.bits.miss
@@ -112,7 +113,9 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
 
   //Dasics check
   io.dasicsReq.valid := io.out.fire  //TODO: temporarily assignment
-  io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.bits.addr := io.out.bits.vaddr
+  // CBO is outside this change. Keep its legacy start-address-only behavior.
+  io.dasicsReq.bits.lgSize := Mux(is_cbo, 0.U, LSUOpType.size(io.out.bits.uop.ctrl.fuOpType))
   io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.write
 

@@ -355,7 +355,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = DasicsGenMemMapping(
     mem_init = DasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasicsMemBoundRegs
   ) ++ DasicsGenJumpMapping(
-    jump_init = DasicsMemInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs
+    jump_init = DasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs
   ) ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
@@ -767,6 +767,10 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   val addr = src2(11, 0)
   val csri = ZeroExt(src2(16, 12), XLEN)
+  val dmaincallPureRead = addr === DasicsMainCall.U && (
+    ((func === CSROpType.set || func === CSROpType.clr) && !src1.orR) ||
+    ((func === CSROpType.seti || func === CSROpType.clri) && !csri.orR)
+  )
   val rdata = Wire(UInt(XLEN.W))
   val wdata = LookupTree(func, List(
     CSROpType.wrt  -> src1,
@@ -814,12 +818,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.disableSfence := tvmNotPermit
 
   // general CSR wen check
-  val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode)
+  val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode) && !dmaincallPureRead
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
-  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted)
+  val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted) || dmaincallPureRead
   val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
 
   MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)

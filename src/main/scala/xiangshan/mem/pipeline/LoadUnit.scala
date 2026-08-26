@@ -220,8 +220,9 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.loadViolationQueryReq.bits.uop := s1_uop
 
   //Dasics check
-  io.dasicsReq.valid := io.out.fire //TODO: temporarily assignment
-  io.dasicsReq.bits.addr := io.out.bits.vaddr //TODO: need for alignment?
+  io.dasicsReq.valid := io.out.fire && !io.in.bits.isSoftPrefetch
+  io.dasicsReq.bits.addr := io.out.bits.vaddr
+  io.dasicsReq.bits.lgSize := LSUOpType.size(io.out.bits.uop.ctrl.fuOpType)
   io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.read
 

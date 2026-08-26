@@ -25,11 +25,11 @@ import xiangshan.cache.{AtomicWordIO, MemoryOpConstants}
 import xiangshan.cache.mmu.{TlbCmd, TlbRequestIO}
 import difftest._
 import xiangshan.ExceptionNO._
-import xiangshan.backend.fu.PMPRespBundle
-import xiangshan.backend.fu.util.SdtrigExt
+import xiangshan.backend.fu.{DasicsOp, DasicsReqBundle, DasicsRespBundle, PMPRespBundle}
+import xiangshan.backend.fu.util.{HasCSRConst, SdtrigExt}
 import xiangshan.backend.fu.DasicsFaultReason
 import xiangshan.backend.fu.DasicsConst
-class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstants with SdtrigExt with DasicsConst{
+class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstants with SdtrigExt with DasicsConst with HasCSRConst{
   val io = IO(new Bundle() {
     val hartId = Input(UInt(8.W))
     val in            = Flipped(Decoupled(new ExuInput))
@@ -44,6 +44,8 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
     val redirect      = Flipped(ValidIO(new Redirect))
     val exceptionAddr = ValidIO(UInt(VAddrBits.W))
     val csrCtrl       = Flipped(new CustomCSRCtrlIO)
+    val dasicsReq     = ValidIO(new DasicsReqBundle())
+    val dasicsResp    = Flipped(new DasicsRespBundle())
   })
 
   //-------------------------------------------------------
@@ -58,6 +60,7 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
   val dasicsFReasonReg = RegInit(0.U(DasicsFaultWidth.W))
   val atom_override_xtval = RegInit(false.B)
   val isLr = in.uop.ctrl.fuOpType === LSUOpType.lr_w || in.uop.ctrl.fuOpType === LSUOpType.lr_d
+  val isSc = in.uop.ctrl.fuOpType === LSUOpType.sc_w || in.uop.ctrl.fuOpType === LSUOpType.sc_d
   // paddr after translation
   val paddr = Reg(UInt())
   val vaddr = in.src(0)
@@ -91,6 +94,12 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
   io.dtlb.req_kill     := false.B
   io.dtlb.resp.ready   := true.B
 
+  io.dasicsReq.valid := false.B
+  io.dasicsReq.bits.addr := vaddr
+  io.dasicsReq.bits.lgSize := LSUOpType.size(in.uop.ctrl.fuOpType)
+  io.dasicsReq.bits.inUntrustedZone := in.uop.cf.dasicsUntrusted
+  io.dasicsReq.bits.operation := Mux(isLr, DasicsOp.read, Mux(isSc, DasicsOp.write, DasicsOp.readWrite))
+
   io.flush_sbuffer.valid := false.B
 
   XSDebug("state: %d\n", state)
@@ -100,6 +109,8 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
     when (io.in.fire) {
       in := io.in.bits
       in.src(1) := in.src(1) // leave src2 unchanged
+      exceptionVec := io.in.bits.uop.cf.exceptionVec
+      dasicsFReasonReg := io.in.bits.uop.cf.dasicsFaultReason
       state := s_tlb
     }
   }
@@ -172,6 +183,7 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
           out_valid := true.B
           atom_override_xtval := true.B
         } .otherwise {
+          io.dasicsReq.valid := true.B
           state := s_pm
         }
       }
@@ -187,10 +199,19 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
       pmp.mmio := static_pm.bits
     }
     is_mmio := pmp.mmio
+    val dasicsFault = io.dasicsResp.dasics_fault
+    val hasDasicsFault = dasicsFault =/= DasicsFaultReason.noDasicsFault
+    when (hasDasicsFault && dasicsFault > dasicsFReasonReg) {
+      exceptionVec(dasicsUCheckFault) := exceptionVec(dasicsUCheckFault) || io.dasicsResp.mode === ModeU
+      exceptionVec(dasicsSCheckFault) := exceptionVec(dasicsSCheckFault) || io.dasicsResp.mode === ModeS
+      dasicsFReasonReg := dasicsFault
+    }
     // NOTE: only handle load/store exception here, if other exception happens, don't send here
     val exception_va = exceptionVec(storePageFault) || exceptionVec(loadPageFault) ||
       exceptionVec(storeAccessFault) || exceptionVec(loadAccessFault) ||
-      ((exceptionVec(dasicsUCheckFault) || exceptionVec(dasicsSCheckFault)) && (dasicsFReasonReg === DasicsFaultReason.LoadMPKFault || dasicsFReasonReg === DasicsFaultReason.StoreMPKFault))
+      ((exceptionVec(dasicsUCheckFault) || exceptionVec(dasicsSCheckFault)) &&
+        (dasicsFReasonReg === DasicsFaultReason.LoadMPKFault || dasicsFReasonReg === DasicsFaultReason.StoreMPKFault)) ||
+      hasDasicsFault
     val exception_pa = pmp.st || pmp.ld
     when (exception_va || exception_pa) {
       state := s_finish
