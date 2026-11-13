@@ -16,8 +16,9 @@
 
 TOP = XSTop
 FPGATOP = top.TopMain
-BUILD_DIR = ./build
-TOP_V = $(BUILD_DIR)/$(TOP).v
+BUILD_DIR ?= ./build
+RTL_BUILD_DIR ?= $(BUILD_DIR)/rtl/$(CONFIG)-$(NUM_CORES)
+TOP_V = $(RTL_BUILD_DIR)/$(TOP).v
 SCALA_FILE = $(shell find ./src/main/scala -name '*.scala')
 TEST_FILE = $(shell find ./src/test/scala -name '*.scala')
 MEM_GEN = ./scripts/vlsi_mem_gen
@@ -68,21 +69,31 @@ TIME_CMD = time -a -o $(TIMELOG)
 help:
 	mill -i XiangShan.test.runMain $(SIMTOP) --help
 
-$(TOP_V): $(SCALA_FILE)
+# CONFIG and generation options are inputs, even when Scala timestamps did not change.
+RTL_INPUTS = $(RTL_BUILD_DIR)/rtl-inputs.txt
+.PHONY: FORCE
+FORCE:
+$(RTL_INPUTS): FORCE
+	@mkdir -p $(RTL_BUILD_DIR)
+	@{ printf '%s\n' 'CONFIG=$(CONFIG)' 'NUM_CORES=$(NUM_CORES)' 'TOP=$(FPGATOP)' 'ARGS=$(RELEASE_ARGS)'; git rev-parse HEAD; find src/main/scala -name '*.scala' -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum; sha256sum build.sc; git submodule status; } > $@.tmp
+	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
+
+.DELETE_ON_ERROR:
+$(TOP_V): $(SCALA_FILE) build.sc $(RTL_INPUTS) scripts/run-isolated-mill.sh
 	mkdir -p $(@D)
-	mill -i XiangShan.runMain $(FPGATOP) --target-dir $(@D)                      \
+	XS_MILL_WORKSPACE="$(ABS_WORK_DIR)/build/scala/$(CONFIG)-$(NUM_CORES)" ./scripts/run-isolated-mill.sh XiangShan.runMain $(FPGATOP) --target-dir $(@D)                      \
 		--config $(CONFIG) --full-stacktrace --output-file $(@F)    \
 		--infer-rw --repl-seq-mem -c:$(FPGATOP):-o:$(@D)/$(@F).conf \
 		--gen-mem-verilog full --num-cores $(NUM_CORES)             \
 		$(RELEASE_ARGS)
 	sed -i -e 's/_\(aw\|ar\|w\|r\|b\)_\(\|bits_\)/_\1/g' $@
-	@git log -n 1 >> .__head__
-	@git diff >> .__diff__
-	@sed -i 's/^/\/\// ' .__head__
-	@sed -i 's/^/\/\//' .__diff__
-	@cat .__head__ .__diff__ $@ > .__out__
-	@mv .__out__ $@
-	@rm .__head__ .__diff__
+	@git log -n 1 >> $(@D)/.__head__
+	@git diff >> $(@D)/.__diff__
+	@sed -i 's/^/\/\// ' $(@D)/.__head__
+	@sed -i 's/^/\/\//' $(@D)/.__diff__
+	@cat $(@D)/.__head__ $(@D)/.__diff__ $@ > $(@D)/.__out__
+	@mv $(@D)/.__out__ $@
+	@rm $(@D)/.__head__ $(@D)/.__diff__
 
 verilog: $(TOP_V)
 
@@ -97,13 +108,13 @@ $(SIM_TOP_V): $(SCALA_FILE) $(TEST_FILE)
 		--infer-rw --repl-seq-mem -c:$(SIMTOP):-o:$(@D)/$(@F).conf  \
 		--gen-mem-verilog full --num-cores $(NUM_CORES)             \
 		$(SIM_ARGS)
-	@git log -n 1 >> .__head__
-	@git diff >> .__diff__
-	@sed -i 's/^/\/\// ' .__head__
-	@sed -i 's/^/\/\//' .__diff__
-	@cat .__head__ .__diff__ $@ > .__out__
-	@mv .__out__ $@
-	@rm .__head__ .__diff__
+	@git log -n 1 >> $(@D)/.__head__
+	@git diff >> $(@D)/.__diff__
+	@sed -i 's/^/\/\// ' $(@D)/.__head__
+	@sed -i 's/^/\/\//' $(@D)/.__diff__
+	@cat $(@D)/.__head__ $(@D)/.__diff__ $@ > $(@D)/.__out__
+	@mv $(@D)/.__out__ $@
+	@rm $(@D)/.__head__ $(@D)/.__diff__
 	sed -i -e 's/$$fatal/xs_assert(`__LINE__)/g' $(SIM_TOP_V)
 
 FILELIST := $(ABS_WORK_DIR)/build/cpu_flist.f
