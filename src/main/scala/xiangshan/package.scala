@@ -199,7 +199,10 @@ package object xiangshan {
     def wrti = "b101".U
     def seti = "b110".U
     def clri = "b111".U
-    def needAccess(op: UInt): Bool = op(1, 0) =/= 0.U
+    def queryMem = "b0001000".U
+    def queryJump = "b0001001".U
+    def isQuery(op: UInt): Bool = op === queryMem || op === queryJump
+    def needAccess(op: UInt): Bool = !isQuery(op) && op(1, 0) =/= 0.U
   }
 
   // jump
