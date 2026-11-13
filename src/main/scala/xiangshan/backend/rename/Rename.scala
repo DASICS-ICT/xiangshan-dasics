@@ -249,6 +249,16 @@ class Rename(implicit p: Parameters) extends XSModule
       io.out(i).bits.ctrl.noSpecExec := true.B
       io.out(i).bits.ctrl.blockBackward := false.B
     }
+    // SC reads/clears/replacements are management boundaries: drain older uops,
+    // and prevent younger requests until the CSR (including its write ack) completes.
+    if (HasBoundReplacement) {
+      when (uops(i).ctrl.fuType === FuType.csr && (addrInDasicsMem || addrInDasicsJump || CSROpType.isQuery(uops(i).ctrl.fuOpType))) {
+        io.out(i).bits.ctrl.noSpecExec := true.B
+        io.out(i).bits.ctrl.blockBackward := true.B
+        io.out(i).bits.lsMemPSI := false.B
+        io.out(i).bits.lsControlFlowPSI := false.B
+      }
+    }
 
   }
 

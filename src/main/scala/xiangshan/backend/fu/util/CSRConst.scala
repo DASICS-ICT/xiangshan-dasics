@@ -84,6 +84,7 @@ trait HasCSRConst {
   val DasicsReturnPc  = 0x8b1
   val DasicsActiveZoneReturnPc = 0x8b2
   val DasicsFReason   = 0x8b3
+  val DasicsBoundPolicy = 0x8b4 // read-only policy descriptor (writes explicitly rejected)
   
   val DasicsJmpCfgBase = 0x8c8
   val DasicsJmpBoundBase = 0x8c0

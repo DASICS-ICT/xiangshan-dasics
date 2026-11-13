@@ -390,6 +390,16 @@ object NDecode extends DecodeConstants {
 /**
   * DASICS custom instructions
   */
+object BoundQueryDecode extends DecodeConstants {
+  // custom-0, funct3=110, imm12=0 (Mem) / 1 (Jump); rs1 holds mask.
+  val MEM = BitPat("b000000000000_?????_110_?????_0001011")
+  val JMP = BitPat("b000000000001_?????_110_?????_0001011")
+  val table: Array[(BitPat, List[BitPat])] = Array(
+    MEM -> List(SrcType.reg, SrcType.imm, SrcType.X, FuType.csr, CSROpType.queryMem, Y, N, N, Y, Y, N, SelImm.IMM_I),
+    JMP -> List(SrcType.reg, SrcType.imm, SrcType.X, FuType.csr, CSROpType.queryJump, Y, N, N, Y, Y, N, SelImm.IMM_I)
+  )
+}
+
 object DasicsDecode extends DecodeConstants {
   val table: Array[(BitPat, List[BitPat])] = Array(
     DASICSCALL_J -> List(SrcType.pc, SrcType.imm, SrcType.X, FuType.jmp, JumpOpType.dasicscall_j, Y, N, N, Y, Y, N, SelImm.IMM_DIJ),
@@ -617,7 +627,14 @@ class DecodeUnit(implicit p: Parameters) extends XSModule with DecodeUnitConstan
     CBODecode.table ++
     NDecode.table ++
     DasicsDecode.table ++
+    (if (HasBoundReplacement) BoundQueryDecode.table else Array.empty[(BitPat, List[BitPat])]) ++
     SvinvalDecode.table
+  BoundQueryDecode.table.foreach { case (query, _) =>
+    val overlaps = decode_table.count { case (pattern, _) =>
+      ((pattern.value ^ query.value) & pattern.mask & query.mask) == 0
+    }
+    require(overlaps == (if (HasBoundReplacement) 1 else 0), "Bound query encoding overlaps another instruction")
+  }
   // assertion for LUI: only LUI should be assigned `selImm === SelImm.IMM_U && fuType === FuType.alu`
   val luiMatch = (t: Seq[BitPat]) => t(3).value == FuType.alu.litValue && t.reverse.head.value == SelImm.IMM_U.litValue
   val luiTable = decode_table.filter(t => luiMatch(t._2)).map(_._1).distinct

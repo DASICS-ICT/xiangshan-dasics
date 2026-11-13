@@ -123,9 +123,12 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val cfOut = Wire(new CtrlFlow)
   cfOut := cfIn
   val flushPipe = Wire(Bool())
+  val boundPending = if (HasBoundReplacement) RegInit(false.B) else WireInit(false.B)
+  val queryPending = WireInit(false.B)
+  val csrResult = Wire(new FuOutput(XLEN))
 
   val (valid, src1, src2, func, isUntrusted) = (
-    io.in.valid,
+    io.in.valid && !boundPending && !queryPending,
     io.in.bits.src(0),
     io.in.bits.uop.ctrl.imm,
     io.in.bits.uop.ctrl.fuOpType,
@@ -356,10 +359,43 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   val dasicsAZoneReturnPcReg: UInt = RegInit(UInt(XLEN.W), 0.U)
   val dasicsMemBoundRegs: Vec[DasicsEntry] = Wire(Vec(NumDasicsMemBounds, new DasicsEntry()))  // just used for method parameter
   val dasicsJumpBoundRegs: Vec[DasicsJumpEntry] = Wire(Vec(NumDasicsJumpBounds, new DasicsJumpEntry()))  
+  val boundSC = if (HasBoundReplacement) Some(Module(new BoundSecondChance(
+    exuParameters.LduCnt + exuParameters.StuCnt + 1 + RenameWidth))) else None
+  val boundWrite = WireInit(false.B)
+  val boundWriteAddr = Wire(UInt(12.W))
+  val boundWriteData = Wire(UInt(XLEN.W))
+  boundSC.foreach { sc =>
+    val memValid = VecInit(dasicsMemBoundRegs.map(_.cfg.valid)).asUInt
+    val jumpValid = VecInit(dasicsJumpBoundRegs.map(_.cfg.valid)).asUInt
+    val writeValid = RegNext(boundWrite, false.B)
+    val writeAddr = RegEnable(boundWriteAddr, boundWrite)
+    val writeData = RegEnable(boundWriteData, boundWrite)
+    val newMem = VecInit(writeData.asTypeOf(Vec(16, new DasicsMemConfig)).map(_.valid)).asUInt
+    val newJump = VecInit((0 until 4).map(i => writeData(i * 16))).asUInt
+    val nextMem = Mux(writeValid && writeAddr === DasicsLibCfgBase.U, newMem, memValid)
+    val nextJump = Mux(writeValid && writeAddr === DasicsJmpCfgBase.U, newJump, jumpValid)
+    sc.io.install.mem := nextMem & ~memValid
+    sc.io.invalidate.mem := ~nextMem
+    sc.io.install.jump := nextJump & ~jumpValid
+    sc.io.invalidate.jump := ~nextJump
+    for ((e, i) <- csrio.boundUse.zipWithIndex) {
+      sc.io.use(i).valid := e.valid
+      sc.io.use(i).bits.isJump := false.B
+      sc.io.use(i).bits.slot := e.bits.slot
+    }
+    for ((e, i) <- csrio.jumpBoundUse.zipWithIndex) {
+      val port = csrio.boundUse.length + i
+      sc.io.use(port).valid := e.valid
+      sc.io.use(port).bits.isJump := true.B
+      sc.io.use(port).bits.slot := e.bits.slot
+    }
+  }
   val dasicsMapping: Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = DasicsGenMemMapping(
-    mem_init = DasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase, memEntries = dasicsMemBoundRegs
+    mem_init = DasicsMemInit, memCfgBase = DasicsLibCfgBase, memBoundBase = DasicsLibBoundBase,
+    memEntries = dasicsMemBoundRegs, referenced = boundSC.map(s => VecInit(s.referenced.mem.asBools))
   ) ++ DasicsGenJumpMapping(
-    jump_init = DasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs
+    jump_init = DasicsJumpInit, jumpCfgBase = DasicsJmpCfgBase, jumpBoundBase = DasicsJmpBoundBase, jumpEntries = dasicsJumpBoundRegs,
+    referenced = boundSC.map(s => VecInit(s.referenced.jump.asBools))
   ) ++ Map(
     MaskedRegMap(DasicsSMainCfg, dasicsMainCfg, dasicsSMainCfgMask),
     MaskedRegMap(DasicsSMainBoundLo, dasicsSMainBoundLo),
@@ -370,7 +406,8 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     MaskedRegMap(DasicsMainCall, dasicsMainCallReg),
     MaskedRegMap(DasicsReturnPc, dasicsReturnPcReg),
     MaskedRegMap(DasicsActiveZoneReturnPc, dasicsAZoneReturnPcReg),
-    MaskedRegMap(DasicsFReason, dasicsFReasonReg)
+    MaskedRegMap(DasicsFReason, dasicsFReasonReg),
+    MaskedRegMap(DasicsBoundPolicy, coreParams.boundReplacement.info.U(XLEN.W), wfn = MaskedRegMap.Unwritable)
   )
 
   // Superviser-Level CSRs
@@ -811,7 +848,21 @@ class CSR(implicit p: Parameters) extends FunctionUnit
                    (addr >= Uscratch.U) && (addr <= Utimer.U)
   val addrIsMPK  = (addr === Spkctl.U) || (addr === Spkrs.U) || (addr === Upkru.U)
 
-  val addrInProtection = addrInDasics || addrInNExt || addrIsMPK
+  val addrInProtection = addrInDasics || addrInNExt || addrIsMPK || addr === DasicsBoundPolicy.U
+  val addrInMemBound = addr === DasicsLibCfgBase.U ||
+    (addr >= DasicsLibBoundBase.U && addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U)
+  val addrInJumpBound = addr === DasicsJmpCfgBase.U ||
+    (addr >= DasicsJmpBoundBase.U && addr < (DasicsJmpBoundBase + NumDasicsJumpBounds * 2).U)
+  val addrInBound = addrInMemBound || addrInJumpBound
+  val isQuery = CSROpType.isQuery(func)
+  val queryPermitted = HasBoundReplacement.B && !isUntrusted
+  val boundHi = ((addr >= DasicsLibBoundBase.U && addr < (DasicsLibBoundBase + NumDasicsMemBounds * 2).U) ||
+    (addr >= DasicsJmpBoundBase.U && addr < (DasicsJmpBoundBase + NumDasicsJumpBounds * 2).U)) && addr(0)
+  val csrPureRead = ((func === CSROpType.set || func === CSROpType.clr) && io.in.bits.uop.ctrl.lsrc(0) === 0.U) ||
+    ((func === CSROpType.seti || func === CSROpType.clri) && !csri.orR)
+  val policyWrite = addr === DasicsBoundPolicy.U && !csrPureRead
+  val boundPureRead = HasBoundReplacement.B && addrInBound && csrPureRead
+  val boundMetadataOnly = HasBoundReplacement.B && boundHi && wdata(XLEN - 2, 0) === rdata(XLEN - 2, 0)
 
   // satp wen check
   val satpLegalMode = (wdata.asTypeOf(new SatpStruct).mode===0.U) || (wdata.asTypeOf(new SatpStruct).mode===8.U)
@@ -822,22 +873,33 @@ class CSR(implicit p: Parameters) extends FunctionUnit
   csrio.disableSfence := tvmNotPermit
 
   // general CSR wen check
-  val wen = valid && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode) && !dmaincallPureRead
+  val wen = valid && !isQuery && func =/= CSROpType.jmp && (addr=/=Satp.U || satpLegalMode) && !dmaincallPureRead
   val dcsrPermitted = dcsrPermissionCheck(addr, false.B, debugMode)
   val triggerPermitted = triggerPermissionCheck(addr, true.B, debugMode) // todo dmode
   val modePermitted = csrAccessPermissionCheck(addr, false.B, privilegeMode) && dcsrPermitted && triggerPermitted
   val perfcntPermitted = perfcntPermissionCheck(addr, privilegeMode, mcounteren, scounteren)
   val dasicsPermitted = !(CSROpType.needAccess(func) && addrInProtection && isUntrusted) || dmaincallPureRead
-  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted
+  val permitted = Mux(addrInPerfCnt, perfcntPermitted, modePermitted) && accessPermitted && dasicsPermitted && !policyWrite
+  val actualWrite = wen && permitted && !boundPureRead && addr =/= DasicsBoundPolicy.U
+  boundWrite := actualWrite && addrInBound
+  boundWriteAddr := addr
+  boundWriteData := wdata
+  if (HasBoundReplacement) {
+    // Rename serializes management access; checker events precede LSU writeback.
+    // Keep this invariant executable in simulation, including exception recovery.
+    when ((valid && (addrInBound || isQuery)) || boundPending || queryPending) {
+      assert(!(csrio.boundUse.map(_.valid) ++ csrio.jumpBoundUse.map(_.valid)).reduce(_ || _), "Bound management overlaps a usage event")
+    }
+  }
 
-  MaskedRegMap.generate(mapping, addr, rdata, wen && permitted, wdata)
-  io.out.bits.data := rdata
-  io.out.bits.uop := io.in.bits.uop
-  io.out.bits.uop.cf := cfOut
-  io.out.bits.uop.ctrl.flushPipe := flushPipe
+  MaskedRegMap.generate(mapping, addr, rdata, actualWrite, wdata)
+  csrResult.data := rdata
+  csrResult.uop := io.in.bits.uop
+  csrResult.uop.cf := cfOut
+  csrResult.uop.ctrl.flushPipe := flushPipe
 
   // send distribute csr a w signal
-  csrio.customCtrl.distribute_csr.w.valid := wen && permitted
+  csrio.customCtrl.distribute_csr.w.valid := actualWrite && !boundMetadataOnly
   csrio.customCtrl.distribute_csr.w.bits.data := wdata
   csrio.customCtrl.distribute_csr.w.bits.addr := addr
 
@@ -930,7 +992,7 @@ class CSR(implicit p: Parameters) extends FunctionUnit
 
   // Illegal priviledged instruction check
   val isIllegalAddr = valid && CSROpType.needAccess(func) && MaskedRegMap.isIllegalAddr(mapping, addr)
-  val isIllegalAccess = wen && !permitted
+  val isIllegalAccess = (wen && !permitted) || (valid && isQuery && !queryPermitted)
   val isIllegalPrivOp = illegalMret || illegalSret || illegalSModeSret || illegalWFI
 
   // expose several csr bits for tlb
@@ -1010,8 +1072,66 @@ class CSR(implicit p: Parameters) extends FunctionUnit
     }
   }
 
-  io.in.ready := true.B
+  io.in.ready := !boundPending && !queryPending
   io.out.valid := valid
+  io.out.bits := csrResult
+  if (HasBoundReplacement) {
+    // Accept a management write once, but keep it in ROB until the canonical
+    // register update (metadata) or the MemDasics address-copy update is applied.
+    // This closes the distribution delay, without relying on fixed software NOPs.
+    val deferWrite = boundWrite
+    val saved = Reg(new FuOutput(XLEN))
+    val waitRemote = Reg(Bool())
+    val waitJump = Reg(Bool())
+    val completed = RegInit(false.B)
+    val cancelled = RegInit(false.B)
+    val cancelNow = cancelled || saved.uop.robIdx.needFlush(io.redirectIn)
+    val localApplied = RegNext(RegNext(deferWrite && boundMetadataOnly, false.B), false.B)
+    when (deferWrite) {
+      boundPending := true.B
+      saved := csrResult
+      waitRemote := !boundMetadataOnly
+      waitJump := addrInJumpBound
+      completed := false.B
+      cancelled := false.B
+    }
+    when (boundPending && Mux(waitRemote, Mux(waitJump, csrio.jumpBoundWriteApplied, csrio.boundWriteApplied), localApplied)) {
+      completed := true.B
+    }
+    when (boundPending && saved.uop.robIdx.needFlush(io.redirectIn)) {
+      cancelled := true.B
+    }
+    io.out.valid := (valid && !deferWrite) || (boundPending && completed && !cancelNow)
+    io.out.bits := Mux(boundPending, saved, csrResult)
+    // Even a cancelled request must consume its acknowledgement before a new
+    // transaction can start; otherwise the old ack could complete a new write.
+    when (boundPending && completed && (io.out.fire || cancelNow)) {
+      boundPending := false.B
+      completed := false.B
+    }
+  }
+
+  boundSC.foreach { policy =>
+    val control = Module(new BoundQueryControl)
+    queryPending := control.io.busy
+    control.io.in.valid := valid && isQuery && queryPermitted
+    control.io.in.bits.tag := csrResult
+    control.io.in.bits.request.isJump := func === CSROpType.queryJump
+    control.io.in.bits.request.mask := src1(15, 0)
+    control.io.in.bits.request.validSlots := Mux(func === CSROpType.queryJump,
+      VecInit(dasicsJumpBoundRegs.map(_.cfg.valid)).asUInt,
+      VecInit(dasicsMemBoundRegs.map(_.cfg.valid)).asUInt)
+    control.io.redirect := io.redirectIn
+    control.io.out.ready := io.out.ready
+    policy.io.query <> control.io.request
+    control.io.result <> policy.io.result
+    policy.io.cancel := control.io.cancel
+    when (valid && isQuery && queryPermitted) { io.in.ready := control.io.in.ready }
+    when (queryPending || (valid && isQuery && queryPermitted)) {
+      io.out.valid := control.io.out.valid
+      io.out.bits := control.io.out.bits
+    }
+  }
 
   // In this situation, hart will enter debug mode instead of handling a breakpoint exception simply.
   // Ebreak block instructions backwards, so it's ok to not keep extra info to distinguish between breakpoint
