@@ -47,6 +47,7 @@ case class XSCoreParameters
   HasCExtension: Boolean = true,
   HasNExtension: Boolean = true,
   HasDasics: Boolean = true,
+  boundReplacement: BoundReplacementParams = BoundReplacementParams(),
   HasDiv: Boolean = true,
   HasICache: Boolean = true,
   HasDCache: Boolean = true,
@@ -287,6 +288,8 @@ trait HasXSParameter {
   val HasCExtension = coreParams.HasCExtension
   val HasNExtension = coreParams.HasNExtension
   val HasDasics = coreParams.HasDasics
+  val HasBoundReplacement = coreParams.boundReplacement.enabled
+  require(!HasBoundReplacement || (HasDasics && coreParams.XLEN == 64 && coreParams.VAddrBits <= 63))
   val HasDiv = coreParams.HasDiv
   val HasIcache = coreParams.HasICache
   val HasDcache = coreParams.HasDCache

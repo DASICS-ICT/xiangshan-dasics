@@ -491,3 +491,11 @@ class MinimalFPGAConfig(n: Int = 1) extends Config(
     )
   })
 )
+
+// Preserve every FPGA parameter except the bound replacement policy.
+class NanHuGdevFPGASCConfig(n: Int = 1) extends Config(
+  new NanHuGdevFPGAConfig(n).alter((site, here, up) => {
+    case XSTileKey => up(XSTileKey).map(_.copy(
+      boundReplacement = BoundReplacementParams(BoundReplacementPolicy.SecondChance)))
+  })
+)
