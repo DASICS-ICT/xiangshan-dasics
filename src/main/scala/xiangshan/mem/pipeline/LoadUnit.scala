@@ -225,6 +225,7 @@ class LoadUnit_S1(implicit p: Parameters) extends XSModule {
   io.dasicsReq.bits.lgSize := LSUOpType.size(io.out.bits.uop.ctrl.fuOpType)
   io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.read
+  io.dasicsReq.bits.recordUse := !io.out.bits.uop.ctrl.fpWen
 
   // Generate forwardMaskFast to wake up insts earlier
   val forwardMaskFast = io.lsq.forwardMaskFast.asUInt | io.sbuffer.forwardMaskFast.asUInt
@@ -640,6 +641,9 @@ class LoadUnit(implicit p: Parameters) extends XSModule with HasLoadHelper with 
     XSPerfAccumulate("load_to_load_forward_fail_set_mismatch",
       cancelPointerChasing && !isCancelled && !notFastMatch && !fuOpTypeIsNotLd && !addressNotAligned && addressMisMatch)
   }
+
+  io.dasicsReq.bits.recordUse := load_s1.io.dasicsReq.bits.recordUse &&
+    !load_s1.io.out.bits.uop.robIdx.needFlush(io.redirect) && !cancelPointerChasing
 
   PipelineConnect(load_s1.io.out, load_s2.io.in, true.B,
     load_s1.io.out.bits.uop.robIdx.needFlush(io.redirect) || cancelPointerChasing)

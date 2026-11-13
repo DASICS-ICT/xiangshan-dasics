@@ -191,6 +191,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   val io = IO(new Bundle {
     val hartId = Input(UInt(8.W))
     val cpu_halt = Output(Bool())
+    val jumpBoundUse = Output(Vec(RenameWidth, Valid(new xiangshan.backend.fu.BoundUseEvent(4))))
     val frontend = Flipped(new FrontendToCtrlIO)
     // to exu blocks
     val allocPregs = Vec(RenameWidth, Output(new ResetPregStateReq))
@@ -435,6 +436,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
     PipelineConnect(rename.io.out(i), dispatch.io.fromRename(i), dispatch.io.recv(i), stage2Redirect.valid)
   }
 
+  io.jumpBoundUse := dispatch.io.jumpBoundUse
   dispatch.io.hartId := io.hartId
   dispatch.io.redirect <> stage2Redirect
   dispatch.io.enqRob <> rob.io.enq

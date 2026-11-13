@@ -138,6 +138,7 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
     memNum: Int = NumDasicsMemBounds,
     memCfgBase: Int, memBoundBase: Int,
     memEntries: Vec[DasicsEntry],
+    referenced: Option[Vec[Bool]] = None,
   ): Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = {
     val DasicsMemCfgPerCSR = XLEN / DasicsMemConfig.getWidth
     def DasicsMemCfgIndex(i: Int) = i / DasicsMemCfgPerCSR
@@ -151,7 +152,9 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
 
     // Wire entries to the registers
     for (i <- memEntries.indices) {
-      memEntries(i).gen(mem_cfgs(i), boundLo = mem_bounds(i * 2), boundHi = mem_bounds(i * 2 + 1))
+      val hi = referenced.map(r => Cat(r(i), mem_bounds(i * 2 + 1)(XLEN - 2, 0)))
+        .getOrElse(mem_bounds(i * 2 + 1))
+      memEntries(i).gen(mem_cfgs(i), boundLo = mem_bounds(i * 2), boundHi = hi)
     }
 
     val mem_cfg_mapping = Map(
@@ -163,7 +166,9 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
     val mem_bound_mapping = Map(
       (0 until memNum * 2).map(i => MaskedRegMap(
         addr = memBoundBase + i, reg = mem_bounds(i),
-        wmask = DasicsEntry.boundRegMask, rmask = DasicsEntry.boundRegMask
+        wmask = if (referenced.nonEmpty && i % 2 == 1) ((BigInt(1) << (XLEN - 1)) - 1).U(XLEN.W) else DasicsEntry.boundRegMask,
+        rmask = DasicsEntry.boundRegMask,
+        rfn = x => if (referenced.nonEmpty && i % 2 == 1) Cat(referenced.get(i / 2), x(XLEN - 2, 0)) else x
       )) : _*
     )
 
@@ -175,7 +180,8 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
     jump_init: () => (Vec[UInt], Vec[UInt]), 
     jumpNum: Int = NumDasicsJumpBounds,
     jumpCfgBase: Int, jumpBoundBase: Int,
-    jumpEntries: Vec[DasicsJumpEntry]
+    jumpEntries: Vec[DasicsJumpEntry],
+    referenced: Option[Vec[Bool]] = None
   ): Map[Int, (UInt, UInt, UInt => UInt, UInt, UInt => UInt)] = {
     val DasicsJumpCfgPerCSR = 4
     def DasicsJumpCfgIndex(i: Int) = i / DasicsJumpCfgPerCSR
@@ -194,7 +200,9 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
 
     // Wire entries to the registers
     for (i <- jumpEntries.indices) {
-      jumpEntries(i).gen(jump_cfgs(i).data, boundLo = jump_bounds(i * 2), boundHi = jump_bounds(i * 2 + 1))
+      val hi = referenced.map(r => Cat(r(i), jump_bounds(i * 2 + 1)(XLEN - 2, 0)))
+        .getOrElse(jump_bounds(i * 2 + 1))
+      jumpEntries(i).gen(jump_cfgs(i).data, boundLo = jump_bounds(i * 2), boundHi = hi)
     }
 
     val jump_cfg_mapping = Map(
@@ -206,7 +214,9 @@ trait DasicsMethod extends DasicsConst { this: HasXSParameter =>
     val jump_bound_mapping = Map(
       (0 until jumpNum * 2).map(i => MaskedRegMap(
         addr = jumpBoundBase + i, reg = jump_bounds(i),
-        wmask = DasicsJumpEntry.boundRegMask, rmask = DasicsJumpEntry.boundRegMask
+        wmask = if (referenced.nonEmpty && i % 2 == 1) DasicsJumpEntry.boundRegMask & ((BigInt(1) << 63) - 1).U(64.W) else DasicsJumpEntry.boundRegMask,
+        rmask = DasicsJumpEntry.boundRegMask,
+        rfn = x => if (referenced.nonEmpty && i % 2 == 1) Cat(referenced.get(i / 2), x(XLEN - 2, 0)) else x
       )) : _*
     )
 
@@ -223,10 +233,12 @@ class DasicsMemIO(implicit p: Parameters) extends XSBundle with DasicsConst {
   val distribute_csr: DistributedCSRIO = Flipped(new DistributedCSRIO())
   val entries: Vec[DasicsEntry] = Output(Vec(NumDasicsMemBounds, new DasicsEntry))
   val mainCfg = Output(new DasicsMainCfg)
+  val boundWriteApplied = Output(Bool())
 }
 class DasicsReqBundle(implicit p: Parameters) extends XSBundle with DasicsConst {
   val addr = Output(UInt(VAddrBits.W))
   val lgSize = Output(UInt(2.W))
+  val recordUse = Output(Bool())
   val inUntrustedZone = Output(Bool())
   val operation = Output(DasicsOp())
 }
@@ -247,9 +259,11 @@ class DasicsMemCheckerIO(implicit p: Parameters) extends XSBundle with DasicsCon
   val mainCfg   = Input(new DasicsMainCfg)
   val req       = Flipped(Valid(new DasicsReqBundle()))
   val resp      = new DasicsRespBundle()
+  val use       = Output(Valid(new BoundUseEvent(NumDasicsMemBounds)))
 
   //connect for every Dasics request
   def connect(addr:UInt, lgSize: UInt, inUntrustedZone:Bool, operation: UInt, entries: Vec[DasicsEntry], mainCfg: DasicsMainCfg): Unit = {
+    this.req.bits.recordUse := true.B
     this.req.bits.addr := addr
     this.req.bits.lgSize := lgSize
     this.req.bits.inUntrustedZone := inUntrustedZone
@@ -280,13 +294,17 @@ class MemDasics(implicit p: Parameters) extends XSModule with DasicsMethod with 
   MaskedRegMap.generate(mapping ++ dasics_config_mapping, w.bits.addr, rdata, w.valid, w.bits.data)
 
 
+  // MaskedRegMap commits two edges after its input write pulse.
+  val boundWrite = w.valid && (w.bits.addr === DasicsLibCfgBase.U ||
+    (w.bits.addr >= DasicsLibBoundBase.U && w.bits.addr < (DasicsLibBoundBase + 32).U))
+  io.boundWriteApplied := RegNext(RegNext(boundWrite, false.B), false.B)
   io.entries   := dasics
   io.mainCfg   := mainCfg
  }
 
 trait DasicsCheckerMethod extends DasicsConst{
   //def dasics_check(addr:UInt, isUntrustedZone: Bool, op: UInt, Dasics: Vec[DasicsEntry]): Bool
-  def dasics_mem_check(req: Valid[DasicsReqBundle], dasics: Vec[DasicsEntry]): Bool = {
+  def dasics_mem_matches(req: Valid[DasicsReqBundle], dasics: Vec[DasicsEntry]): Seq[Bool] = {
     val addrWidth = req.bits.addr.getWidth
     val accessSize = MuxLookup(req.bits.lgSize, 1.U((addrWidth + 1).W), Seq(
       0.U -> 1.U((addrWidth + 1).W),
@@ -302,8 +320,11 @@ trait DasicsCheckerMethod extends DasicsConst{
       entry.cfg.valid && !addressOverflow && entry.boundMatch(req.bits.addr, accessEnd) &&
         readPermitted && writePermitted
     }
-    !boundMatchVec.reduce(_ || _) && req.bits.inUntrustedZone && req.valid
+    boundMatchVec
   }
+
+  def dasics_mem_check(req: Valid[DasicsReqBundle], dasics: Vec[DasicsEntry]): Bool =
+    !dasics_mem_matches(req, dasics).reduce(_ || _) && req.bits.inUntrustedZone && req.valid
 
   def dasics_jump_check(req: Valid[DasicsReqBundle], dasics: Vec[DasicsJumpEntry]): Bool = {
     val inBoundVec = VecInit(dasics.map(entry => entry.cfg.valid && entry.boundMatch(req.bits.addr)))
@@ -336,13 +357,24 @@ class DasicsMemChecker(implicit p: Parameters) extends XSModule
 
   val req = io.req
   val dasics_entries = io.resource
+  val matches = VecInit(dasics_mem_matches(req, dasics_entries)).asUInt
+  io.use.bits.slot := PriorityEncoder(matches)
+  val readEnabled = Mux(io.mode === ModeU, io.mainCfg.uEnable && !io.mainCfg.closeULoadFault,
+    io.mode === ModeS && io.mainCfg.sEnable && !io.mainCfg.closeSLoadFault)
+  val writeEnabled = Mux(io.mode === ModeU, io.mainCfg.uEnable && !io.mainCfg.closeUStoreFault,
+    io.mode === ModeS && io.mainCfg.sEnable && !io.mainCfg.closeSStoreFault)
+  // Combinational feedback is consumed at the S1/check edge, before LSU writeback.
+  io.use.valid := HasBoundReplacement.B && req.valid && req.bits.recordUse &&
+    req.bits.inUntrustedZone && matches.orR && !DasicsOp.isJump(req.bits.operation) &&
+    (!DasicsOp.isRead(req.bits.operation) || readEnabled) &&
+    (!DasicsOp.isWrite(req.bits.operation) || writeEnabled)
 
   val dasics_mem_fault = RegInit(false.B)
   val dasics_req_read  = RegInit(false.B)
   val dasics_req_write = RegInit(false.B)
 
   when(io.req.valid){
-    dasics_mem_fault := dasics_mem_check(req, dasics_entries)
+    dasics_mem_fault := !matches.orR && req.bits.inUntrustedZone && req.valid
     dasics_req_read  := DasicsOp.isRead(req.bits.operation)
     dasics_req_write := DasicsOp.isWrite(req.bits.operation)
   }
@@ -397,6 +429,9 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
 
   val rdata: UInt = Wire(UInt(XLEN.W))
   MaskedRegMap.generate(mapping ++ control_flow_mapping, w.bits.addr, rdata, w.valid, w.bits.data)
+  val boundWrite = w.valid && (w.bits.addr === DasicsJmpCfgBase.U ||
+    (w.bits.addr >= DasicsJmpBoundBase.U && w.bits.addr < (DasicsJmpBoundBase + 8).U))
+  io.boundWriteApplied := RegNext(RegNext(boundWrite, false.B), false.B)
 
   private val mainCfg = Wire(new DasicsMainCfg())
   mainCfg.gen(dasics_main_cfg)
@@ -408,7 +443,10 @@ class DasicsBranchChecker(implicit p: Parameters) extends XSModule
                                 !dasics_jump_in_bound(
                                 addr = io.lastBranch, boundHi = boundHi(VAddrBits - 1, 0), boundLo = boundLo(VAddrBits - 1, 0)
                                 )
-  private val targetOutOfActive = dasics_jump_check(io.target, dasics)
+  val matches = VecInit(dasics.map(e => e.cfg.valid && e.boundMatch(io.target))).asUInt
+  private val targetOutOfActive = !matches.orR
+  io.use.bits.slot := PriorityEncoder(matches)
+  io.use.valid := HasBoundReplacement.B && io.valid && branchUntrusted && matches.orR
   private val illegalBranch = io.valid && branchUntrusted && targetOutOfActive &&
     (io.target =/= dasics_return_pc) && (io.target =/= dasics_main_call) && (io.target =/= dasics_azone_return_pc)
 
@@ -521,6 +559,8 @@ class DasicsBranchIO(implicit p: Parameters) extends XSBundle with DasicsConst {
   val lastBranch: UInt = Input(UInt(VAddrBits.W))
   val target: UInt = Input(UInt(VAddrBits.W))
   val resp = new DasicsRespBundle()
+  val use = Output(Valid(new BoundUseEvent(4)))
+  val boundWriteApplied = Output(Bool())
 }
 
 class DasicsTaggerIO(implicit p: Parameters) extends XSBundle {

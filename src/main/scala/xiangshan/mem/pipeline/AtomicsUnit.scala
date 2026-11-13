@@ -95,6 +95,7 @@ class AtomicsUnit(implicit p: Parameters) extends XSModule with MemoryOpConstant
   io.dtlb.resp.ready   := true.B
 
   io.dasicsReq.valid := false.B
+  io.dasicsReq.bits.recordUse := !in.uop.robIdx.needFlush(io.redirect)
   io.dasicsReq.bits.addr := vaddr
   io.dasicsReq.bits.lgSize := LSUOpType.size(in.uop.ctrl.fuOpType)
   io.dasicsReq.bits.inUntrustedZone := in.uop.cf.dasicsUntrusted

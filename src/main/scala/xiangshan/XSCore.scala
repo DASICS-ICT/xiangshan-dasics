@@ -371,6 +371,10 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   ctrlBlock.perfinfo.perfEventsRs  := outer.exuBlocks.flatMap(b => b.module.getPerf.takeRight(b.scheduler.numRs))
 
   csrioIn.hartId <> io.hartId
+  csrioIn.boundUse := memBlock.io.boundUse
+  csrioIn.boundWriteApplied := memBlock.io.boundWriteApplied
+  csrioIn.jumpBoundWriteApplied := frontend.io.boundWriteApplied
+  csrioIn.jumpBoundUse := ctrlBlock.io.jumpBoundUse
   csrioIn.perf <> DontCare
   csrioIn.perf.retiredInstr <> ctrlBlock.io.robio.toCSR.perfinfo.retiredInstr
   csrioIn.perf.ctrlInfo <> ctrlBlock.io.perfInfo.ctrlInfo

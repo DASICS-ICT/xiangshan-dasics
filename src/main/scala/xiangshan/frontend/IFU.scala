@@ -64,6 +64,7 @@ class IFUDasicsIO(implicit p: Parameters) extends XSBundle {
   // for branch checker
   val lastBranch = ValidIO(UInt(VAddrBits.W))
   val resp = Flipped(new DasicsRespBundle)
+  val use = Flipped(Valid(new xiangshan.backend.fu.BoundUseEvent(4)))
 }
 
 class NewIFUIO(implicit p: Parameters) extends XSBundle {
@@ -301,6 +302,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
 
   val f2_resend_vaddr     = RegEnable(next = f1_ftq_req.startAddr + 2.U, enable = f1_fire)
 
+  val f2_jumpBoundUse = RegEnable(io.dasics.use, f1_fire)
   val f2_dasics_tag       = RegEnable(f1_dasics_tag, f1_fire)
   val f2_dasics_br_resp  = RegEnable(f1_dasics_br_resp, f1_fire)
   val f2_dasics_mode     = RegEnable(f1_dasics_mode, f1_fire)
@@ -430,6 +432,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   val f3_has_except     = f3_valid && (f3_except_af.reduce(_||_) || f3_except_pf.reduce(_||_))
   val f3_pAddrs   = RegEnable(f2_paddrs, f2_fire)
   val f3_resend_vaddr   = RegEnable(f2_resend_vaddr, f2_fire)
+  val f3_jumpBoundUse = RegEnable(f2_jumpBoundUse, f2_fire)
   val f3_dasics_tag     = RegEnable(f2_dasics_tag, f2_fire)
   val f3_dasics_br_resp = RegEnable(f2_dasics_br_resp, f2_fire)
   val f3_dasics_mode    = RegEnable(f2_dasics_mode, f2_fire)
@@ -710,6 +713,7 @@ class NewIFU(implicit p: Parameters) extends XSModule
   io.toIbuffer.bits.dasicsUntrusted := f3_dasics_tag
   io.toIbuffer.bits.mode.map{a => a := f3_dasics_mode}
   io.toIbuffer.bits.dasicsBrResp  := f3_dasics_br_resp
+  io.toIbuffer.bits.jumpBoundUse := f3_jumpBoundUse
   io.toIbuffer.bits.lastBranch := f3_ftq_req.lastBranch.bits
   io.toIbuffer.bits.jumpPSI     := VecInit(f3_pd.map(inst => inst.isJPSI))
 

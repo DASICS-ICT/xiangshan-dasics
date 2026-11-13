@@ -49,6 +49,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
     val tlbCsr = Input(new TlbCsrBundle)
     val csrCtrl = Input(new CustomCSRCtrlIO)
     val csrUpdate = new DistributedCSRUpdateReq
+    val boundWriteApplied = Output(Bool())
     val error  = new L1CacheErrorInfo
     val frontendInfo = new Bundle {
       val ibufFull  = Output(Bool())
@@ -100,6 +101,8 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   ifu.io.dasics.resp.mode := tlbCsr.priv.imode
   ifu.io.dasics.resp.dasics_fault := DasicsFaultReason.noDasicsFault
   ifu.io.dasics.notTrusted := VecInit(Seq.fill(FetchWidth * 2){ false.B }) 
+  ifu.io.dasics.use := 0.U.asTypeOf(ifu.io.dasics.use)
+  io.boundWriteApplied := false.B
   if(HasDasics){
   // DasicsTagger
   val dasicsTagger: DasicsTagger = Module(new DasicsTagger())
@@ -115,6 +118,8 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   dasicsBrChecker.io.lastBranch := ifu.io.dasics.lastBranch.bits
   dasicsBrChecker.io.target := ifu.io.dasics.startAddr
   ifu.io.dasics.resp := dasicsBrChecker.io.resp
+  ifu.io.dasics.use := dasicsBrChecker.io.use
+  io.boundWriteApplied := dasicsBrChecker.io.boundWriteApplied
   }
 
   // val tlb_req_arb     = Module(new Arbiter(new TlbReq, 2))

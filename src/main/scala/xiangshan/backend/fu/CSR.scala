@@ -81,6 +81,10 @@ class PerfCounterIO(implicit p: Parameters) extends XSBundle {
 
 class CSRFileIO(implicit p: Parameters) extends XSBundle {
   val hartId = Input(UInt(8.W))
+  val boundUse = Input(Vec(exuParameters.LduCnt + exuParameters.StuCnt + 1, Valid(new BoundUseEvent)))
+  val boundWriteApplied = Input(Bool())
+  val jumpBoundWriteApplied = Input(Bool())
+  val jumpBoundUse = Input(Vec(RenameWidth, Valid(new BoundUseEvent(4))))
   // output (for func === CSROpType.jmp)
   val perf = Input(new PerfCounterIO)
   val isPerfCnt = Output(Bool())

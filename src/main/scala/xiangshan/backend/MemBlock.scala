@@ -97,6 +97,8 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     }
     val csrCtrl = Flipped(new CustomCSRCtrlIO)
     val csrUpdate = new DistributedCSRUpdateReq
+    val boundUse = Output(Vec(exuParameters.LduCnt + exuParameters.StuCnt + 1, Valid(new BoundUseEvent)))
+    val boundWriteApplied = Output(Bool())
     val error = new L1CacheErrorInfo
     val memInfo = new Bundle {
       val sqFull = Output(Bool())
@@ -259,10 +261,13 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
     resp.dasics_fault := DasicsFaultReason.noDasicsFault
   }
 
+  io.boundUse := 0.U.asTypeOf(io.boundUse)
+  io.boundWriteApplied := false.B
   if(HasDasics){
     // dasics memory access check
     val dasics = Module(new MemDasics())
     dasics.io.distribute_csr <> csrCtrl.distribute_csr
+    io.boundWriteApplied := dasics.io.boundWriteApplied
   
     val dasics_checkers = VecInit(Seq.fill(exuParameters.LduCnt + exuParameters.StuCnt + 1)(
       Module(new DasicsMemChecker()).io
@@ -274,6 +279,7 @@ class MemBlockImp(outer: MemBlock) extends LazyModuleImp(outer)
       dchecker.mainCfg  := dasics.io.mainCfg
       dchecker.req := memDasicsReq(index)
       memDasicsResp(index) := dchecker.resp
+      io.boundUse(index) := dchecker.use
     }
   }
 

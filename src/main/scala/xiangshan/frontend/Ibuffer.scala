@@ -51,6 +51,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
   val triggered = new TriggerCf
   val dasicsUntrusted = Bool()
   val mode = UInt(2.W)
+  val jumpBoundUse = ValidUndirectioned(new xiangshan.backend.fu.BoundUseEvent(4))
   val dasicsBrResp = new DasicsRespDataBundle
   val lastBranch: UInt = UInt(VAddrBits.W)
   val jumpPSI = Bool()
@@ -71,6 +72,8 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     mode := fetch.mode(i)
     dasicsBrResp.dasics_fault := DasicsFaultReason.noDasicsFault
     dasicsBrResp.mode := fetch.dasicsBrResp.mode
+    jumpBoundUse.bits := fetch.jumpBoundUse.bits
+    jumpBoundUse.valid := (i == 0).B && fetch.jumpBoundUse.valid
     lastBranch := DontCare
     jumpPSI := fetch.jumpPSI(i)
     if (i == 0) { // only the first instr is a branch target
@@ -102,6 +105,7 @@ class IBufEntry(implicit p: Parameters) extends XSBundle with HasCSRConst{
     cf.ftqPtr := ftqPtr
     cf.ftqOffset := ftqOffset
     cf.dasicsUntrusted := dasicsUntrusted
+    cf.jumpBoundUse := jumpBoundUse
     cf.mode := mode
     cf.dasicsFaultReason := dasicsBrResp.dasics_fault
     cf.lastBranch.valid := dasicsBrResp.dasics_fault =/= DasicsFaultReason.noDasicsFault

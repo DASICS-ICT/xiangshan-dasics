@@ -118,6 +118,7 @@ class StoreUnit_S1(implicit p: Parameters) extends XSModule {
   io.dasicsReq.bits.lgSize := Mux(is_cbo, 0.U, LSUOpType.size(io.out.bits.uop.ctrl.fuOpType))
   io.dasicsReq.bits.inUntrustedZone := io.out.bits.uop.cf.dasicsUntrusted
   io.dasicsReq.bits.operation := DasicsOp.write
+  io.dasicsReq.bits.recordUse := !is_cbo && !SrcType.isFp(io.out.bits.uop.ctrl.srcType(1))
 
   io.in.ready := true.B
 
@@ -252,6 +253,7 @@ class StoreUnit(implicit p: Parameters) extends XSModule {
   store_s0.io.isFirstIssue := io.isFirstIssue
 
   io.dasicsReq := store_s1.io.dasicsReq
+  io.dasicsReq.bits.recordUse := store_s1.io.dasicsReq.bits.recordUse && !store_s1.io.out.bits.uop.robIdx.needFlush(io.redirect)
   store_s2.io.dasicsResp := io.dasicsResp
 
   io.storeMaskOut.valid := store_s0.io.in.valid

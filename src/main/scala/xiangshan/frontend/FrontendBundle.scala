@@ -129,6 +129,7 @@ class FetchToIBuffer(implicit p: Parameters) extends XSBundle {
   val dasicsUntrusted = Vec(PredictWidth, Bool())
   val jumpPSI = Vec(PredictWidth, Bool())
   val mode = Vec(PredictWidth, UInt(2.W))
+  val jumpBoundUse = ValidUndirectioned(new xiangshan.backend.fu.BoundUseEvent(4))
   val dasicsBrResp = new DasicsRespDataBundle  // last branch to this instr block is illegal
   val lastBranch: UInt = UInt(VAddrBits.W)
 }

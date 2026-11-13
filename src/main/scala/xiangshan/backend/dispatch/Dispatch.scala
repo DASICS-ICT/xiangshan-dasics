@@ -43,6 +43,7 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     // from rename
     val fromRename = Vec(RenameWidth, Flipped(DecoupledIO(new MicroOp)))
     val recv = Output(Vec(RenameWidth, Bool()))
+    val jumpBoundUse = Output(Vec(RenameWidth, Valid(new xiangshan.backend.fu.BoundUseEvent(4))))
     // enq Rob
     val enqRob = Flipped(new RobEnqIO)
     val hasInflightMemPSI = Input(Bool())
@@ -200,6 +201,9 @@ class Dispatch(implicit p: Parameters) extends XSModule with HasPerfEvents {
     io.enqRob.needAlloc(i) := io.fromRename(i).valid
     io.enqRob.req(i).valid := io.fromRename(i).valid && thisCanActualOut(i) && io.toIntDq.canAccept && io.toFpDq.canAccept && io.toLsDq.canAccept
     io.enqRob.req(i).bits := updatedUop(i)
+    io.jumpBoundUse(i).bits := updatedUop(i).cf.jumpBoundUse.bits
+    io.jumpBoundUse(i).valid := HasBoundReplacement.B && io.enqRob.req(i).valid && io.enqRob.canAccept &&
+      !io.redirect.valid && !hasException(i) && updatedUop(i).cf.jumpBoundUse.valid
     XSDebug(io.enqRob.req(i).valid, p"pc 0x${Hexadecimal(io.fromRename(i).bits.cf.pc)} receives nrob ${io.enqRob.resp(i)}\n")
 
     // When previous instructions have exceptions, following instructions should not enter dispatch queues.

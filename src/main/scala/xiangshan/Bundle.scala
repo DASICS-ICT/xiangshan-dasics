@@ -136,6 +136,7 @@ class CtrlFlow(implicit p: Parameters) extends XSBundle with DasicsConst {
 
   val mode = UInt(2.W)
   // Dasics Exception Reason
+  val jumpBoundUse = ValidUndirectioned(new xiangshan.backend.fu.BoundUseEvent(4))
   val dasicsFaultReason = UInt(DasicsFaultWidth.W) 
   // info of branch fault by last branch
   val lastBranch = ValidUndirectioned(UInt(VAddrBits.W))
